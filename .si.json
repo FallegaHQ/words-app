@@ -33,6 +33,10 @@
     ".sh": {
       "enabled": false,
       "run": "bash-language-server start"
+    },
+    ".yml": {
+      "enabled": false,
+      "run": "yaml-language-server --stdio"
     }
   }
 }
