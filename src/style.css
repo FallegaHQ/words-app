@@ -1,0 +1,641 @@
+/* ── Reset ─────────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ── Layout ────────────────────────────────────────────────────────────────── */
+body {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #064e8c 0%, #1070b8 45%, #0b7a6a 100%);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 16px;
+  font-family: 'Nunito', sans-serif;
+}
+
+#app { width: 100%; max-width: 620px; }
+
+/* ── Ticket ────────────────────────────────────────────────────────────────── */
+.ticket {
+  background: linear-gradient(155deg, #ffe54f 0%, #ffb700 55%, #ff8c00 100%);
+  border-radius: 20px;
+  padding: 12px 12px 14px;
+  box-shadow: 0 10px 50px rgba(0,0,0,.45), inset 0 2px 0 rgba(255,255,255,.35);
+  border: 3px solid #c95f00;
+  position: relative;
+  overflow: hidden;
+}
+.ticket::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(45deg, transparent, transparent 12px,
+    rgba(255,255,255,.04) 12px, rgba(255,255,255,.04) 24px);
+}
+
+/* ── Header ────────────────────────────────────────────────────────────────── */
+.hdr { text-align: center; margin-bottom: 8px; }
+.hdr-title {
+  font-family: 'Fredoka One', cursive;
+  font-size: 24px;
+  color: #9b1313;
+  text-shadow: 2px 2px 0 rgba(255,255,255,.45), -1px -1px 0 rgba(0,0,0,.08);
+}
+.hdr-sub { font-size: 9px; font-weight: 800; color: #6d3a1a; letter-spacing: 1.5px; text-transform: uppercase; }
+
+/* ── Main row ──────────────────────────────────────────────────────────────── */
+.main-row { display: flex; gap: 8px; }
+
+/* ── Prize Key ─────────────────────────────────────────────────────────────── */
+.prize-key {
+  background: rgba(255,255,255,.22);
+  border: 2px solid rgba(255,255,255,.45);
+  border-radius: 10px;
+  padding: 6px 5px;
+  min-width: 74px;
+  flex-shrink: 0;
+}
+.pk-title {
+  font-family: 'Fredoka One', cursive;
+  font-size: 11px;
+  color: #9b1313;
+  text-align: center;
+  border-bottom: 1px solid rgba(0,0,0,.18);
+  padding-bottom: 3px;
+  margin-bottom: 3px;
+}
+.pk-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 2px 3px;
+  border-radius: 4px;
+  margin-bottom: 1px;
+  transition: background .3s;
+}
+.pk-row .wl { font-size: 8px; font-weight: 800; color: #5d4037; }
+.pk-row .am { font-size: 9px;  font-weight: 900; color: #9b1313; }
+.pk-row.reached { background: rgba(200,230,169,.4); }
+.pk-row.active  { background: #c8e6c9; border: 1px solid #2e7d32; }
+.pk-row.active .wl, .pk-row.active .am { color: #1b5e20; }
+
+/* ── Grid column ───────────────────────────────────────────────────────────── */
+.grid-col { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+
+/* ── Word badges ───────────────────────────────────────────────────────────── */
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  justify-content: center;
+}
+.badge {
+  background: rgba(255,255,255,.25);
+  border: 1.5px solid rgba(255,255,255,.45);
+  border-radius: 20px;
+  padding: 1px 7px;
+  font-size: 9px;
+  font-weight: 800;
+  color: #5d4037;
+  transition: all .3s;
+  user-select: none;
+  letter-spacing: .5px;
+}
+.badge.done { background: #c8e6c9; border-color: #2e7d32; color: #1b5e20; }
+
+/* ── 15×15 Grid ────────────────────────────────────────────────────────────── */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(11, 1fr);
+  gap: 2px;
+  background: rgba(0,0,0,.25);
+  border: 2px solid rgba(0,0,0,.3);
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.cell {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Fredoka One', cursive;
+  font-size: 12px;
+  border-radius: 2px;
+  user-select: none;
+  transition: background .2s, transform .15s;
+  position: relative;
+}
+
+/* Filler cells — visible but passive */
+.cell-fill {
+  background: rgba(255, 220, 100, .45);
+  color: #b08040;
+  font-size: 8px;
+}
+
+/* Word cells — base state (letter not yet revealed) */
+.cell-word.locked {
+  background: #fff8e6;
+  color: #a08050;
+  border: 1px solid rgba(0,0,0,.08);
+  font-weight: 700;
+}
+
+/* Word cell — letter revealed, ready to scratch */
+.cell-word.available {
+  background: #fff176;
+  color: #3e2723;
+  border: 1.5px solid #f9a825;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: 0 0 0 2px rgba(249,168,37,.35);
+}
+/* Pulse only fires once, when the cell is first discovered */
+.cell-word.available.animate-in {
+  animation: pulse-available 1.8s ease-in-out infinite;
+}
+.cell-word.available:hover {
+  background: #ffe082;
+  transform: scale(1.18);
+  z-index: 1;
+  box-shadow: 0 2px 8px rgba(0,0,0,.25);
+}
+
+/* Word cell — scratched by player */
+.cell-word.scratched {
+  background: #c8e6c9;
+  color: #33691e;
+  border: 1px solid rgba(0,100,0,.2);
+  font-weight: 900;
+}
+
+/* Word cell — part of a completed word */
+.cell-word.word-done {
+  background: #aed581 !important;
+  color: #1b5e20 !important;
+  border-color: #558b2f !important;
+}
+
+/* Wild cell */
+.cell-wild {
+  background: #fff8e1;
+  border: 1.5px solid #f9a825;
+  font-size: 11px;
+}
+/* Unscratched wild — always clickable for free */
+.cell-wild.available {
+  cursor: pointer;
+  font-size: 15px;
+  box-shadow: 0 0 0 2px rgba(249,168,37,.35);
+}
+.cell-wild.available:hover {
+  background: #ffe082;
+  transform: scale(1.18);
+  z-index: 1;
+  box-shadow: 0 2px 8px rgba(0,0,0,.25);
+}
+.cell-wild.word-done { background: #aed581; border-color: #558b2f; }
+
+@keyframes pulse-available {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(249,168,37,.35); }
+  50%       { box-shadow: 0 0 0 4px rgba(249,168,37,.6); }
+}
+
+/* ── Grid hint ─────────────────────────────────────────────────────────────── */
+.grid-hint { text-align: center; font-size: 9px; font-weight: 800; min-height: 14px; }
+.hint-avail { color: #1b5e20; }
+.hint-idle  { color: #6d3a1a; letter-spacing: .5px; }
+
+/* ── Bottom section ────────────────────────────────────────────────────────── */
+.bottom-section {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+  align-items: flex-start;
+}
+
+/* ── Hand section ──────────────────────────────────────────────────────────── */
+.hand-section  { flex: 1; }
+.bonus-section { flex-shrink: 0; text-align: center; }
+.section-label {
+  font-family: 'Fredoka One', cursive;
+  font-size: 12px;
+  color: #9b1313;
+  text-align: center;
+  margin-bottom: 5px;
+}
+.sub-hint { font-family: 'Nunito', sans-serif; font-size: 8px; font-weight: 800;
+            color: #6d3a1a; letter-spacing: .5px; }
+
+/* ── Tile grid (hand) ──────────────────────────────────────────────────────── */
+.tile-grid  { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
+.bonus-tiles { display: flex; gap: 8px; justify-content: center; margin-top: 2px; }
+
+/* ── Tile (shared between hand + bonus) ────────────────────────────────────── */
+.tile {
+  aspect-ratio: 1;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Fredoka One', cursive;
+  font-size: 16px;
+  border: 2px solid;
+  transition: all .2s;
+  user-select: none;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Hidden tile — scratchable */
+.tile.hidden {
+  background: radial-gradient(circle at 38% 32%, #f0ece4, #c9a87c);
+  border-color: #8d6e63;
+  color: transparent;
+  cursor: pointer;
+  box-shadow: inset 0 2px 5px rgba(255,255,255,.55), 0 2px 5px rgba(0,0,0,.2);
+}
+.tile.hidden::after {
+  content: '';
+  position: absolute;
+  top: 12%; left: 12%;
+  width: 28%; height: 28%;
+  background: rgba(255,255,255,.55);
+  border-radius: 50%;
+}
+.tile.hidden:hover { transform: scale(1.12); box-shadow: 0 4px 12px rgba(0,0,0,.3); }
+
+/* Bonus hidden tile */
+.tile.bonus-tile.hidden {
+  background: radial-gradient(circle at 38% 32%, #ff8a65, #bf360c);
+  border-color: #7f2400;
+  color: #fff;
+  font-size: 19px;
+}
+.tile.bonus-tile.hidden::after { display: none; }
+
+/* Revealed tile — neutral */
+.tile.revealed {
+  background: radial-gradient(circle at 38% 32%, #fff9e6, #ffe082);
+  border-color: #f57f17;
+  color: #3e2723;
+  cursor: default;
+}
+
+/* Revealed tile — letter useful for an incomplete word */
+.tile.revealed.useful {
+  background: radial-gradient(circle at 38% 32%, #c8e6c9, #a5d6a7);
+  border-color: #2e7d32;
+  color: #1b5e20;
+}
+
+/* Bonus revealed */
+.tile.bonus-tile.revealed { border-color: #e65100; }
+
+/* Bonus tile sizing */
+.bonus-section .tile { width: 44px; height: 44px; }
+
+/* ── Prize reveal ──────────────────────────────────────────────────────────── */
+.prize-reveal {
+  margin-top: 8px;
+  text-align: center;
+  background: rgba(255,255,255,.32);
+  border-radius: 12px;
+  padding: 10px;
+  border: 2px solid rgba(255,255,255,.55);
+  display: none;
+}
+.prize-reveal.show { display: block; animation: pop .4s ease; }
+@keyframes pop { from { transform: scale(.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.pr-count  { font-size: 12px; font-weight: 900; color: #3e2723; }
+.pr-amount { font-family: 'Fredoka One', cursive; font-size: 32px; color: #9b1313; margin-top: 2px; }
+.pr-amount.no-prize { font-size: 20px; color: #6d3a1a; }
+.pr-none   { font-size: 11px; color: #6d3a1a; font-weight: 700; }
+
+/* ── Buttons ───────────────────────────────────────────────────────────────── */
+.btn-row { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.btn {
+  flex: 1;
+  min-width: 120px;
+  padding: 8px 6px;
+  border: none;
+  border-radius: 10px;
+  font-family: 'Fredoka One', cursive;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all .18s;
+  box-shadow: 0 3px 8px rgba(0,0,0,.25);
+}
+.btn:hover              { transform: scale(1.03); }
+.btn-secondary          { background: rgba(255,255,255,.3); color: #3e2723; border: 2px solid rgba(255,255,255,.5); }
+.btn-primary            { background: #9b1313; color: #fff; }
+.btn-primary:hover      { background: #b71c1c; }
+
+/* ── Cell pop animation ────────────────────────────────────────────────────── */
+@keyframes cellPop {
+  0%   { transform: scale(.6); opacity: .3; }
+  60%  { transform: scale(1.15); }
+  100% { transform: scale(1); opacity: 1; }
+}
+/* Pop fires only on the cell that was just scratched */
+.cell-word.just-scratched { animation: cellPop .25s ease; }
+
+/* ── Loading & Error screens ───────────────────────────────────────────────── */
+.screen-card {
+  min-height: 340px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.screen-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 32px 24px;
+  text-align: center;
+}
+
+.loading-icon {
+  font-size: 52px;
+  animation: icon-bounce 1s ease-in-out infinite alternate;
+}
+@keyframes icon-bounce {
+  from { transform: translateY(0)    rotate(-4deg); }
+  to   { transform: translateY(-10px) rotate(4deg);  }
+}
+
+.loading-title {
+  font-family: 'Fredoka One', cursive;
+  font-size: 22px;
+  color: #9b1313;
+  text-shadow: 1px 1px 0 rgba(255,255,255,.4);
+}
+
+/* Error screen */
+.loading-bar-wrap {
+  width: 200px;
+  height: 8px;
+  background: rgba(0,0,0,.15);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.loading-bar {
+  height: 100%;
+  width: 0%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, #9b1313, #ff8c00);
+  transition: width .18s ease, background .4s ease;
+}
+.loading-bar.bar-done {
+  background: linear-gradient(90deg, #2e7d32, #66bb6a);
+}
+
+.loading-attempt {
+  font-size: 11px;
+  font-weight: 800;
+  color: #6d3a1a;
+  letter-spacing: .5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Error screen */
+.error-title {
+  font-family: 'Fredoka One', cursive;
+  font-size: 22px;
+  color: #9b1313;
+}
+.error-body {
+  font-size: 13px;
+  font-weight: 700;
+  color: #6d3a1a;
+  line-height: 1.6;
+}
+.error-btn {
+  margin-top: 6px;
+  padding: 10px 32px;
+  font-size: 15px;
+}
+/* ── Badge — clickable ─────────────────────────────────────────────────────── */
+.badge-clickable {
+  cursor: pointer;
+  user-select: none;
+  transition: all .2s;
+}
+.badge-clickable:hover {
+  background: rgba(255,255,255,.55);
+  border-color: rgba(255,255,255,.85);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(0,0,0,.18);
+}
+.badge-clickable:active { transform: translateY(0); }
+
+/* ── Definition Modal ─────────────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.0);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+  pointer-events: none;
+  transition: background .2s;
+}
+.modal-overlay.modal-visible {
+  background: rgba(0,0,0,.55);
+  pointer-events: all;
+  backdrop-filter: blur(3px);
+}
+.modal-card {
+  background: linear-gradient(155deg, #fffde7 0%, #fff8e1 100%);
+  border: 3px solid #c95f00;
+  border-radius: 18px;
+  box-shadow: 0 12px 50px rgba(0,0,0,.45), inset 0 2px 0 rgba(255,255,255,.6);
+  max-width: 380px;
+  width: 100%;
+  overflow: hidden;
+  animation: modal-pop .2s cubic-bezier(.34,1.56,.64,1) forwards;
+}
+@keyframes modal-pop {
+  from { transform: scale(.85); opacity: 0; }
+  to   { transform: scale(1);   opacity: 1; }
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(135deg, #ff8c00 0%, #ffb700 100%);
+  padding: 12px 16px;
+  border-bottom: 2px solid #c95f00;
+}
+.modal-word {
+  font-family: 'Fredoka One', cursive;
+  font-size: 22px;
+  color: #fff;
+  text-shadow: 1px 1px 3px rgba(0,0,0,.25);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.modal-close {
+  background: rgba(0,0,0,.18);
+  border: none;
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .15s;
+  flex-shrink: 0;
+}
+.modal-close:hover { background: rgba(0,0,0,.35); }
+.modal-body {
+  padding: 16px;
+  min-height: 70px;
+  display: flex;
+  align-items: center;
+}
+.modal-def {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #4a2c0a;
+  font-weight: 600;
+  margin: 0;
+}
+.modal-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: #8d4e02;
+  font-weight: 700;
+}
+.modal-spinner {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 3px solid rgba(201,95,0,.25);
+  border-top-color: #c95f00;
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Badge — clickable ──────────────────────────────────────────────────────── */
+.badge-clickable {
+  cursor: pointer;
+  user-select: none;
+  transition: all .2s;
+}
+.badge-clickable:hover {
+  background: rgba(255,255,255,.55);
+  border-color: rgba(255,255,255,.9);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0,0,0,.18);
+}
+.badge-clickable:active { transform: translateY(0); box-shadow: none; }
+
+/* ── Definition Modal ───────────────────────────────────────────────────────── */
+.def-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+  opacity: 0;
+  transition: opacity .2s ease;
+  backdrop-filter: blur(3px);
+}
+.def-modal-overlay.visible { opacity: 1; }
+
+.def-modal {
+  background: linear-gradient(155deg, #fffde7 0%, #fff8e1 100%);
+  border: 3px solid #c95f00;
+  border-radius: 18px;
+  box-shadow: 0 16px 60px rgba(0,0,0,.45);
+  width: 100%;
+  max-width: 380px;
+  transform: scale(.92) translateY(8px);
+  transition: transform .22s cubic-bezier(.34,1.56,.64,1);
+  overflow: hidden;
+}
+.def-modal-overlay.visible .def-modal {
+  transform: scale(1) translateY(0);
+}
+
+.def-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 10px;
+  border-bottom: 2px solid rgba(201,95,0,.25);
+  background: linear-gradient(90deg, #ff8c00, #ffb700);
+}
+.def-modal-word {
+  font-family: 'Fredoka One', cursive;
+  font-size: 22px;
+  color: #fff;
+  letter-spacing: 1px;
+  text-shadow: 1px 2px 4px rgba(0,0,0,.25);
+}
+.def-modal-close {
+  background: rgba(255,255,255,.25);
+  border: none;
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  font-size: 14px;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .15s;
+  flex-shrink: 0;
+}
+.def-modal-close:hover { background: rgba(255,255,255,.45); }
+
+.def-modal-body {
+  padding: 16px;
+  min-height: 70px;
+  display: flex;
+  align-items: center;
+}
+
+.def-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #6d3a1a;
+  font-size: 13px;
+  font-weight: 700;
+}
+.def-spinner {
+  width: 20px;
+  height: 20px;
+  border: 3px solid #ffb700;
+  border-top-color: #c95f00;
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.def-text {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #3e2000;
+  font-weight: 600;
+  white-space: pre-wrap;
+}

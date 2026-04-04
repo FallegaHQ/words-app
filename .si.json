@@ -1,0 +1,38 @@
+{
+  "plugin": "org.smartide.plugin.editor",
+  "run": "npm run dev",
+  "intelligence": {
+    ".json": {
+      "enabled": false,
+      "run": "vscode-json-language-server --stdio"
+    },
+    ".css": {
+      "enabled": false,
+      "run": "vscode-css-language-server --stdio"
+    },
+    ".ts": {
+      "enabled": false,
+      "run": "typescript-language-server --stdio"
+    },
+    ".gradle": {
+      "enabled": false,
+      "run": "groovy-language-server"
+    },
+    ".properties": {
+      "enabled": false,
+      "run": "lemminx"
+    },
+    ".xml": {
+      "enabled": false,
+      "run": "lemminx"
+    },
+    ".java": {
+      "enabled": false,
+      "run": "jdtls"
+    },
+    ".sh": {
+      "enabled": false,
+      "run": "bash-language-server start"
+    }
+  }
+}
