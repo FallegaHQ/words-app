@@ -37,6 +37,10 @@
     ".yml": {
       "enabled": false,
       "run": "yaml-language-server --stdio"
+    },
+    ".svg": {
+      "enabled": false,
+      "run": "lemminx"
     }
   }
 }

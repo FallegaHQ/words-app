@@ -58,3 +58,11 @@ pnpm-debug.log*
 # Keystore (never commit secrets!)
 *.keystore
 *.jks
+
+# Vite
+dist/
+
+# Android build outputs (keep source, ignore compiled artifacts)
+android/app/build/
+android/.gradle/
+android/build/
