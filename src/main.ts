@@ -3,7 +3,7 @@ import { generateGameAsync, revealTile, scratchCell,
          revealAllHand, revealAllBonus, scratchAllAvailable } from './gameLogic';
 import { render, renderLoading, updateLoadingProgress, renderError,
          showDefinitionModal, hideDefinitionModal, type RenderCallbacks } from './render';
-import type { GameState } from './types';
+import type { GameState, Word } from './types';
 
 // ── Word bank (fetched once, used for game generation) ────────────────────────
 let wordBankCache: string[] | null = null;
@@ -102,7 +102,7 @@ async function startNewGame(): Promise<void> {
     await Promise.all([
       generateGameAsync(wordBank, (attempt, max, done) => {
         updateLoadingProgress(attempt, max, done);
-      }).then(s => { nextState = s; }).catch(() => { failed = true; }),
+      }).then((s: GameState) => { nextState = s; }).catch(() => { failed = true; }),
       new Promise<void>(resolve => setTimeout(resolve, 2000)),
     ]);
   } catch {
@@ -111,13 +111,12 @@ async function startNewGame(): Promise<void> {
 
   if (failed || !nextState) {
     renderError(() => startNewGame());
-  } else {
-    update(nextState!);
-    // Prefetch only the letter chunks needed for this game's words
-    if (nextState.words) {
-      prefetchDictChunks(nextState.words.map(w => w.text ?? w));
-    }
+    return;
   }
+
+  const resolvedState: GameState = nextState;
+  update(resolvedState);
+  prefetchDictChunks(resolvedState.words.map((w: Word) => w.text));
 }
 
 startNewGame();
