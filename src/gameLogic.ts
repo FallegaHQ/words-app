@@ -1,5 +1,5 @@
 import { GRID_SIZE, TARGET_WORDS, HAND_SIZE, BONUS_SIZE, WILD_COUNT,
-         MAX_GEN_ATTEMPTS, ALPHABET, DIFFICULTY } from './constants';
+         MAX_GEN_ATTEMPTS, ALPHABET } from './constants';
 import type { Cell, Word, GameState } from './types';
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
@@ -32,15 +32,13 @@ function wordDifficulty(word: string): number {
 
 /**
  * Returns candidates sorted so harder words (rare letters) tend to appear first.
- * At DIFFICULTY=0 the result is a plain shuffle; at 1 it's sorted hardest-first.
- * A random perturbation is mixed in so every game differs even at the same difficulty.
+ * At difficulty=0 the result is a plain shuffle; at 1 it's sorted hardest-first.
  */
-function riggedCandidates(words: string[]): string[] {
+function riggedCandidates(words: string[], difficulty: number): string[] {
   const shuffled = shuffle(words);
   const scored = shuffled.map(w => ({
     word: w,
-    // Blend deterministic difficulty with per-item randomness
-    score: wordDifficulty(w) * DIFFICULTY + Math.random() * (1 - DIFFICULTY) * 26,
+    score: wordDifficulty(w) * difficulty + Math.random() * (1 - difficulty) * 26,
   }));
   scored.sort((a, b) => b.score - a.score);
   return scored.map(s => s.word);
@@ -48,13 +46,11 @@ function riggedCandidates(words: string[]): string[] {
 
 /**
  * Weighted sampling without replacement.
- * Items with higher weight are more likely to be chosen.
  */
 function weightedSample(pool: string[], weights: number[], n: number): string[] {
   const p = [...pool];
   const w = [...weights];
   const result: string[] = [];
-
   for (let i = 0; i < n; i++) {
     const total = w.reduce((a, b) => a + b, 0);
     let r = Math.random() * total;
@@ -69,12 +65,10 @@ function weightedSample(pool: string[], weights: number[], n: number): string[] 
 
 /**
  * Builds a rigged hand from the alphabet.
- * Letters that cover many word cells in the grid are given lower selection weight,
- * so the player is unlikely to receive the letters they actually need.
- * At DIFFICULTY=0 it's a plain shuffle; at 1 it's maximally unhelpful.
+ * Letters that cover many word cells in the grid are given lower selection weight.
+ * At difficulty=0 it's a plain shuffle; at 1 it's maximally unhelpful.
  */
-function riggedHand(grid: Cell[][]): { hand: string[]; bonus: string[] } {
-  // Count how many word cells each letter unlocks
+function riggedHand(grid: Cell[][], difficulty: number): { hand: string[]; bonus: string[] } {
   const coverage: Record<string, number> = Object.fromEntries(
     ALPHABET.split('').map(l => [l, 0])
   );
@@ -83,12 +77,9 @@ function riggedHand(grid: Cell[][]): { hand: string[]; bonus: string[] } {
       if (cell.wordIds.length > 0 && !cell.isWild)
         coverage[cell.letter]++;
 
-  // weight = 1 / (coverage + 1)^DIFFICULTY
-  // High coverage → low weight → rarely chosen.
-  // At DIFFICULTY=0 all weights are 1 (uniform). At 1, fully inverse.
   const letters = ALPHABET.split('');
   const weights = letters.map(l =>
-    1 / Math.pow(coverage[l] + 1, DIFFICULTY)
+    1 / Math.pow(coverage[l] + 1, difficulty)
   );
 
   const all = weightedSample(letters, weights, HAND_SIZE + BONUS_SIZE);
@@ -126,8 +117,6 @@ function canPlace(
     const c = horiz ? sc + i : sc;
     if (grid[r][c].letter) {
       if (grid[r][c].letter !== word[i]) return false;
-      // Reject if this cell is already part of a word running the same direction —
-      // that means the two words are collinear and overlapping, not merely crossing.
       const collinear = grid[r][c].wordIds.some(id => words[id]?.horiz === horiz);
       if (collinear) return false;
       hit++;
@@ -189,7 +178,6 @@ function tryGenerateGrid(candidates: string[]): { grid: Cell[][]; words: Word[] 
   const grid = makeGrid();
   const words: Word[] = [];
 
-  // First word horizontal through center
   const first = candidates[0];
   placeWord(grid, words, first, Math.floor(N / 2), Math.floor((N - first.length) / 2), true, 0);
 
@@ -201,30 +189,34 @@ function tryGenerateGrid(candidates: string[]): { grid: Cell[][]; words: Word[] 
   return words.length >= TARGET_WORDS ? { grid, words } : null;
 }
 
-export function generateGame(wordBank: string[]): GameState {
+export function generateGame(wordBank: string[], difficulty: number): GameState {
   let result: { grid: Cell[][]; words: Word[] } | null = null;
 
   for (let attempt = 0; attempt < MAX_GEN_ATTEMPTS; attempt++) {
-    const candidates = riggedCandidates(wordBank.filter(w => w.length >= 3 && w.length <= 7));
+    const candidates = riggedCandidates(wordBank.filter(w => w.length >= 3 && w.length <= 7), difficulty);
     result = tryGenerateGrid(candidates);
     if (result) break;
   }
   if (!result) throw new Error('Could not generate a 20-word grid after max attempts');
 
-  return finishGame(result);
+  return finishGame(result, difficulty);
 }
 
 type ProgressCallback = (attempt: number, max: number, done: boolean) => void;
 
 /** Async version of generateGame — yields between attempts so the UI can update. */
-export async function generateGameAsync(wordBank: string[], onProgress: ProgressCallback): Promise<GameState> {
+export async function generateGameAsync(
+  wordBank: string[],
+  onProgress: ProgressCallback,
+  difficulty: number
+): Promise<GameState> {
   let result: { grid: Cell[][]; words: Word[] } | null = null;
 
   for (let attempt = 0; attempt < MAX_GEN_ATTEMPTS; attempt++) {
     onProgress(attempt + 1, MAX_GEN_ATTEMPTS, false);
     await new Promise<void>(r => setTimeout(r, 0)); // yield to browser
 
-    const candidates = riggedCandidates(wordBank.filter(w => w.length >= 4 && w.length <= 6));
+    const candidates = riggedCandidates(wordBank.filter(w => w.length >= 4 && w.length <= 6), difficulty);
     result = tryGenerateGrid(candidates);
     if (result) break;
   }
@@ -232,10 +224,10 @@ export async function generateGameAsync(wordBank: string[], onProgress: Progress
   if (!result) throw new Error('Could not generate a 20-word grid after max attempts');
 
   onProgress(MAX_GEN_ATTEMPTS, MAX_GEN_ATTEMPTS, true);
-  return finishGame(result);
+  return finishGame(result, difficulty);
 }
 
-function finishGame(result: { grid: Cell[][]; words: Word[] }): GameState {
+function finishGame(result: { grid: Cell[][]; words: Word[] }, difficulty: number): GameState {
   const { grid, words } = result;
   const N = GRID_SIZE;
 
@@ -259,19 +251,14 @@ function finishGame(result: { grid: Cell[][]; words: Word[] }): GameState {
       return true;
     })
     .slice(0, WILD_COUNT)
-    .forEach(([r, c]) => {
-      grid[r][c].isWild = true;
-      // scratched stays false — player clicks the ⭐ to reveal it for free
-    });
+    .forEach(([r, c]) => { grid[r][c].isWild = true; });
 
-  // Recompute completeness (a word is done only if every cell is already scratched)
   const finalWords = words.map(w => ({
     ...w,
     complete: w.cells.every(([r, c]) => grid[r][c].scratched),
   }));
 
-  // Hand: 18 letters + 2 bonus, weighted against the letters the grid actually needs
-  const { hand: handLetters, bonus: bonusLetters } = riggedHand(grid);
+  const { hand: handLetters, bonus: bonusLetters } = riggedHand(grid, difficulty);
 
   return {
     grid,
@@ -286,10 +273,6 @@ function finishGame(result: { grid: Cell[][]; words: Word[] }): GameState {
 
 // ── Actions ───────────────────────────────────────────────────────────────────
 
-/**
- * Reveal a hand or bonus tile.
- * Does NOT auto-scratch any grid cells — the player must click each cell manually.
- */
 export function revealTile(state: GameState, idx: number, isBonus: boolean): GameState {
   const hand  = state.hand.map(t  => ({ ...t }));
   const bonus = state.bonus.map(t => ({ ...t }));
@@ -300,7 +283,6 @@ export function revealTile(state: GameState, idx: number, isBonus: boolean): Gam
 
   const revealedLetters = new Set([...state.revealedLetters, target[idx].letter]);
 
-  // Find word cells that just became scratchable thanks to this reveal
   const newLetter = target[idx].letter;
   const justAvailable = new Set<string>();
   for (let r = 0; r < GRID_SIZE; r++) {
@@ -316,15 +298,10 @@ export function revealTile(state: GameState, idx: number, isBonus: boolean): Gam
   return { ...state, hand, bonus, revealedLetters, animatedCells: new Set(), newlyAvailableCells };
 }
 
-/**
- * Scratch a single grid cell.
- * Wildcards (⭐) can always be scratched for free.
- * Normal word cells require their letter to have been revealed from the hand.
- */
 export function scratchCell(state: GameState, r: number, c: number): GameState {
   const cell = state.grid[r][c];
   if (cell.scratched) return state;
-  if (cell.wordIds.length === 0) return state; // filler cell, not interactive
+  if (cell.wordIds.length === 0) return state;
   if (!cell.isWild && !state.revealedLetters.has(cell.letter)) return state;
 
   const grid = state.grid.map((row, ri) =>
@@ -339,21 +316,18 @@ export function scratchCell(state: GameState, r: number, c: number): GameState {
   return { ...state, grid, words, animatedCells: new Set([`${r},${c}`]), newlyAvailableCells: new Set() };
 }
 
-/** Reveal all unrevealed hand tiles. */
 export function revealAllHand(state: GameState): GameState {
   let s = state;
   s.hand.forEach((t, i) => { if (!t.revealed) s = revealTile(s, i, false); });
   return s;
 }
 
-/** Reveal all unrevealed bonus tiles. */
 export function revealAllBonus(state: GameState): GameState {
   let s = state;
   s.bonus.forEach((t, i) => { if (!t.revealed) s = revealTile(s, i, true); });
   return s;
 }
 
-/** Scratch every available (revealed, unscratched) word cell, including wildcards. */
 export function scratchAllAvailable(state: GameState): GameState {
   const N = GRID_SIZE;
   let s = state;
@@ -370,7 +344,6 @@ export function scratchAllAvailable(state: GameState): GameState {
 
 // ── Query helpers ─────────────────────────────────────────────────────────────
 
-/** Is this letter useful for any incomplete word? */
 export function tileIsUseful(letter: string, state: GameState): boolean {
   return state.words.some(w =>
     !w.complete &&

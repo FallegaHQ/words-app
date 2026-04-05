@@ -2,10 +2,13 @@ import './style.css';
 import { generateGameAsync, revealTile, scratchCell,
          revealAllHand, revealAllBonus, scratchAllAvailable } from './gameLogic';
 import { render, renderLoading, updateLoadingProgress, renderError,
-         showDefinitionModal, hideDefinitionModal, type RenderCallbacks } from './render';
-import type { GameState, Word } from './types';
+         showDefinitionModal, hideDefinitionModal,
+         showHighScoreModal, type RenderCallbacks } from './render';
+import { DIFFICULTY_PRESETS } from './constants';
+import type { GameState, Word, HighScore } from './types';
 
-// ── Word bank (fetched once, used for game generation) ────────────────────────
+// ── Word bank ─────────────────────────────────────────────────────────────────
+
 let wordBankCache: string[] | null = null;
 
 async function getWordBank(): Promise<string[]> {
@@ -17,7 +20,8 @@ async function getWordBank(): Promise<string[]> {
   return wordBankCache;
 }
 
-// ── Dictionary (chunked by first letter, loaded lazily) ───────────────────────
+// ── Dictionary (chunked by first letter) ──────────────────────────────────────
+
 const dictChunkCache: Record<string, Record<string, string>> = {};
 const dictChunkLoading: Record<string, Promise<Record<string, string>>> = {};
 
@@ -30,15 +34,8 @@ async function getDictChunk(letter: string): Promise<Record<string, string>> {
         if (!res.ok) throw new Error(`Dict chunk '${l}' failed: ${res.status}`);
         return res.json() as Promise<Record<string, string>>;
       })
-      .then(chunk => {
-        dictChunkCache[l] = chunk;
-        delete dictChunkLoading[l];
-        return chunk;
-      })
-      .catch(err => {
-        delete dictChunkLoading[l];
-        throw err;
-      });
+      .then(chunk => { dictChunkCache[l] = chunk; delete dictChunkLoading[l]; return chunk; })
+      .catch(err  => { delete dictChunkLoading[l]; throw err; });
   }
   return dictChunkLoading[l];
 }
@@ -49,43 +46,64 @@ async function getDefinition(word: string): Promise<string | null> {
   return chunk[lower] ?? null;
 }
 
-// Prefetch the chunks for letters present in the current game board.
 function prefetchDictChunks(words: string[]): void {
   const letters = new Set(words.map(w => w[0].toLowerCase()));
-  for (const letter of letters) {
-    getDictChunk(letter).catch(() => { /* silent — will retry on click */ });
-  }
+  for (const letter of letters) getDictChunk(letter).catch(() => {});
 }
 
-// ── Game state ────────────────────────────────────────────────────────────────
+// ── High score persistence ────────────────────────────────────────────────────
+
+const HS_KEY = 'luckyLetters_scores';
+
+function getHighScores(): HighScore[] {
+  try {
+    const raw = localStorage.getItem(HS_KEY);
+    return raw ? (JSON.parse(raw) as HighScore[]) : [];
+  } catch { return []; }
+}
+
+function saveScore(wordsComplete: number): void {
+  if (wordsComplete === 0) return;
+  const scores = getHighScores();
+  scores.push({ words: wordsComplete, date: new Date().toISOString() });
+  scores.sort((a, b) => b.words - a.words);
+  try {
+    localStorage.setItem(HS_KEY, JSON.stringify(scores.slice(0, 100)));
+  } catch { /* storage full or blocked */ }
+}
+
+// ── App state ─────────────────────────────────────────────────────────────────
+
 let state: GameState | null = null;
+let currentDifficulty: number = DIFFICULTY_PRESETS.medium;
 
 const callbacks: RenderCallbacks = {
-  onRevealTile:      (i, isBonus) => state && update(revealTile(state, i, isBonus)),
-  onScratchCell:     (r, c)       => state && update(scratchCell(state, r, c)),
-  onRevealAllHand:   ()           => state && update(revealAllHand(state)),
-  onRevealAllBonus:  ()           => state && update(revealAllBonus(state)),
-  onScratchAllAvail: ()           => state && update(scratchAllAvailable(state)),
-  onNewGame:         ()           => startNewGame(),
-  onWordClick:       (word)       => handleWordClick(word),
+  onRevealTile:       (i, isBonus) => state && update(revealTile(state, i, isBonus)),
+  onScratchCell:      (r, c)       => state && update(scratchCell(state, r, c)),
+  onRevealAllHand:    ()           => state && update(revealAllHand(state)),
+  onRevealAllBonus:   ()           => state && update(revealAllBonus(state)),
+  onScratchAllAvail:  ()           => state && update(scratchAllAvailable(state)),
+  onNewGame: () => {
+    if (state) saveScore(state.words.filter(w => w.complete).length);
+    startNewGame();
+  },
+  onWordClick:          (word) => handleWordClick(word),
+  onDifficultyChange:   (diff) => { currentDifficulty = diff; },
+  onShowHighScores:     ()    => showHighScoreModal(getHighScores()),
 };
 
 function update(next: GameState): void {
   state = next;
-  render(state, callbacks);
+  render(state, callbacks, currentDifficulty);
 }
 
 async function handleWordClick(word: string): Promise<void> {
-  showDefinitionModal(word, null); // show spinner immediately
-
+  showDefinitionModal(word, null);
   try {
     const def = await getDefinition(word);
     showDefinitionModal(word, def ?? '(No definition found)');
   } catch {
-    showDefinitionModal(
-      word,
-      '⚠️ Could not load dictionary.\nMake sure the /dictionary/ folder is in public/.'
-    );
+    showDefinitionModal(word, '⚠️ Could not load dictionary.\nMake sure the /dictionary/ folder is in public/.');
   }
 }
 
@@ -98,11 +116,14 @@ async function startNewGame(): Promise<void> {
 
   try {
     const wordBank = await getWordBank();
+    const difficulty = currentDifficulty;
 
     await Promise.all([
       generateGameAsync(wordBank, (attempt, max, done) => {
         updateLoadingProgress(attempt, max, done);
-      }).then((s: GameState) => { nextState = s; }).catch(() => { failed = true; }),
+      }, difficulty)
+        .then((s: GameState) => { nextState = s; })
+        .catch(() => { failed = true; }),
       new Promise<void>(resolve => setTimeout(resolve, 2000)),
     ]);
   } catch {

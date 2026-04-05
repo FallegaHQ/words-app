@@ -41,46 +41,91 @@ body {
   color: #9b1313;
   text-shadow: 2px 2px 0 rgba(255,255,255,.45), -1px -1px 0 rgba(0,0,0,.08);
 }
-.hdr-sub { font-size: 9px; font-weight: 800; color: #6d3a1a; letter-spacing: 1.5px; text-transform: uppercase; }
-
-/* ── Main row ──────────────────────────────────────────────────────────────── */
-.main-row { display: flex; gap: 8px; }
-
-/* ── Prize Key ─────────────────────────────────────────────────────────────── */
-.prize-key {
-  background: rgba(255,255,255,.22);
-  border: 2px solid rgba(255,255,255,.45);
-  border-radius: 10px;
-  padding: 6px 5px;
-  min-width: 74px;
+.hdr-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 4px;
+}
+.hdr-sub {
+  font-size: 9px;
+  font-weight: 800;
+  color: #6d3a1a;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  flex-shrink: 1;
+  text-align: left;
+}
+.hdr-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   flex-shrink: 0;
 }
-.pk-title {
-  font-family: 'Fredoka One', cursive;
-  font-size: 11px;
-  color: #9b1313;
-  text-align: center;
-  border-bottom: 1px solid rgba(0,0,0,.18);
-  padding-bottom: 3px;
-  margin-bottom: 3px;
-}
-.pk-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 2px 3px;
-  border-radius: 4px;
-  margin-bottom: 1px;
-  transition: background .3s;
-}
-.pk-row .wl { font-size: 8px; font-weight: 800; color: #5d4037; }
-.pk-row .am { font-size: 9px;  font-weight: 900; color: #9b1313; }
-.pk-row.reached { background: rgba(200,230,169,.4); }
-.pk-row.active  { background: #c8e6c9; border: 1px solid #2e7d32; }
-.pk-row.active .wl, .pk-row.active .am { color: #1b5e20; }
 
-/* ── Grid column ───────────────────────────────────────────────────────────── */
-.grid-col { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+/* ── Difficulty control ────────────────────────────────────────────────────── */
+.diff-control {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.diff-label {
+  font-size: 8px;
+  font-weight: 900;
+  color: #6d3a1a;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.diff-pills {
+  display: flex;
+  gap: 2px;
+  background: rgba(0,0,0,.12);
+  border-radius: 20px;
+  padding: 2px;
+}
+.diff-pill {
+  border: none;
+  border-radius: 16px;
+  padding: 2px 7px;
+  font-family: 'Fredoka One', cursive;
+  font-size: 10px;
+  cursor: pointer;
+  background: transparent;
+  color: #6d3a1a;
+  transition: all .15s;
+  white-space: nowrap;
+}
+.diff-pill:hover { background: rgba(255,255,255,.3); color: #3e2723; }
+.diff-pill.active {
+  background: #9b1313;
+  color: #fff;
+  box-shadow: 0 1px 4px rgba(0,0,0,.25);
+}
+
+/* ── High score button ────────────────────────────────────────────────────── */
+.btn-hs {
+  border: none;
+  border-radius: 50%;
+  width: 26px;
+  height: 26px;
+  background: rgba(255,255,255,.3);
+  border: 1.5px solid rgba(255,255,255,.5);
+  font-size: 13px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all .15s;
+  flex-shrink: 0;
+}
+.btn-hs:hover {
+  background: rgba(255,255,255,.55);
+  transform: scale(1.1);
+}
+
+/* ── Grid section ──────────────────────────────────────────────────────────── */
+.grid-section { display: flex; flex-direction: column; gap: 4px; }
 
 /* ── Word badges ───────────────────────────────────────────────────────────── */
 .badges {
@@ -103,7 +148,7 @@ body {
 }
 .badge.done { background: #c8e6c9; border-color: #2e7d32; color: #1b5e20; }
 
-/* ── 15×15 Grid ────────────────────────────────────────────────────────────── */
+/* ── Grid ──────────────────────────────────────────────────────────────────── */
 .grid {
   display: grid;
   grid-template-columns: repeat(11, 1fr);
@@ -127,14 +172,14 @@ body {
   position: relative;
 }
 
-/* Filler cells — visible but passive */
+/* Filler cells */
 .cell-fill {
   background: rgba(255, 220, 100, .45);
   color: #b08040;
   font-size: 8px;
 }
 
-/* Word cells — base state (letter not yet revealed) */
+/* Word cells — locked */
 .cell-word.locked {
   background: #fff8e6;
   color: #a08050;
@@ -142,7 +187,7 @@ body {
   font-weight: 700;
 }
 
-/* Word cell — letter revealed, ready to scratch */
+/* Word cell — available */
 .cell-word.available {
   background: #fff176;
   color: #3e2723;
@@ -151,7 +196,6 @@ body {
   cursor: pointer;
   box-shadow: 0 0 0 2px rgba(249,168,37,.35);
 }
-/* Pulse only fires once, when the cell is first discovered */
 .cell-word.available.animate-in {
   animation: pulse-available 1.8s ease-in-out infinite;
 }
@@ -162,7 +206,7 @@ body {
   box-shadow: 0 2px 8px rgba(0,0,0,.25);
 }
 
-/* Word cell — scratched by player */
+/* Word cell — scratched */
 .cell-word.scratched {
   background: #c8e6c9;
   color: #33691e;
@@ -170,7 +214,7 @@ body {
   font-weight: 900;
 }
 
-/* Word cell — part of a completed word */
+/* Word cell — part of completed word */
 .cell-word.word-done {
   background: #aed581 !important;
   color: #1b5e20 !important;
@@ -183,7 +227,6 @@ body {
   border: 1.5px solid #f9a825;
   font-size: 11px;
 }
-/* Unscratched wild — always clickable for free */
 .cell-wild.available {
   cursor: pointer;
   font-size: 15px;
@@ -229,10 +272,10 @@ body {
             color: #6d3a1a; letter-spacing: .5px; }
 
 /* ── Tile grid (hand) ──────────────────────────────────────────────────────── */
-.tile-grid  { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
+.tile-grid   { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
 .bonus-tiles { display: flex; gap: 8px; justify-content: center; margin-top: 2px; }
 
-/* ── Tile (shared between hand + bonus) ────────────────────────────────────── */
+/* ── Tile ──────────────────────────────────────────────────────────────────── */
 .tile {
   aspect-ratio: 1;
   border-radius: 50%;
@@ -248,7 +291,6 @@ body {
   overflow: hidden;
 }
 
-/* Hidden tile — scratchable */
 .tile.hidden {
   background: radial-gradient(circle at 38% 32%, #f0ece4, #c9a87c);
   border-color: #8d6e63;
@@ -266,7 +308,6 @@ body {
 }
 .tile.hidden:hover { transform: scale(1.12); box-shadow: 0 4px 12px rgba(0,0,0,.3); }
 
-/* Bonus hidden tile */
 .tile.bonus-tile.hidden {
   background: radial-gradient(circle at 38% 32%, #ff8a65, #bf360c);
   border-color: #7f2400;
@@ -275,43 +316,56 @@ body {
 }
 .tile.bonus-tile.hidden::after { display: none; }
 
-/* Revealed tile — neutral */
 .tile.revealed {
   background: radial-gradient(circle at 38% 32%, #fff9e6, #ffe082);
   border-color: #f57f17;
   color: #3e2723;
   cursor: default;
 }
-
-/* Revealed tile — letter useful for an incomplete word */
 .tile.revealed.useful {
   background: radial-gradient(circle at 38% 32%, #c8e6c9, #a5d6a7);
   border-color: #2e7d32;
   color: #1b5e20;
 }
 
-/* Bonus revealed */
 .tile.bonus-tile.revealed { border-color: #e65100; }
-
-/* Bonus tile sizing */
 .bonus-section .tile { width: 44px; height: 44px; }
 
-/* ── Prize reveal ──────────────────────────────────────────────────────────── */
-.prize-reveal {
+/* ── Score bar ─────────────────────────────────────────────────────────────── */
+.score-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   margin-top: 8px;
-  text-align: center;
-  background: rgba(255,255,255,.32);
-  border-radius: 12px;
-  padding: 10px;
-  border: 2px solid rgba(255,255,255,.55);
-  display: none;
+  background: rgba(255,255,255,.25);
+  border: 1.5px solid rgba(255,255,255,.45);
+  border-radius: 10px;
+  padding: 5px 12px;
 }
-.prize-reveal.show { display: block; animation: pop .4s ease; }
-@keyframes pop { from { transform: scale(.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-.pr-count  { font-size: 12px; font-weight: 900; color: #3e2723; }
-.pr-amount { font-family: 'Fredoka One', cursive; font-size: 32px; color: #9b1313; margin-top: 2px; }
-.pr-amount.no-prize { font-size: 20px; color: #6d3a1a; }
-.pr-none   { font-size: 11px; color: #6d3a1a; font-weight: 700; }
+.score-count {
+  font-family: 'Fredoka One', cursive;
+  font-size: 20px;
+  color: #9b1313;
+  line-height: 1;
+}
+.score-total {
+  font-size: 13px;
+  color: #6d3a1a;
+}
+.score-label {
+  font-size: 9px;
+  font-weight: 900;
+  color: #6d3a1a;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.score-stars {
+  font-size: 14px;
+  letter-spacing: 1px;
+  color: #c95f00;
+  margin-left: 2px;
+}
 
 /* ── Buttons ───────────────────────────────────────────────────────────────── */
 .btn-row { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
@@ -338,7 +392,6 @@ body {
   60%  { transform: scale(1.15); }
   100% { transform: scale(1); opacity: 1; }
 }
-/* Pop fires only on the cell that was just scratched */
 .cell-word.just-scratched { animation: cellPop .25s ease; }
 
 /* ── Loading & Error screens ───────────────────────────────────────────────── */
@@ -348,7 +401,6 @@ body {
   align-items: center;
   justify-content: center;
 }
-
 .screen-inner {
   display: flex;
   flex-direction: column;
@@ -357,73 +409,44 @@ body {
   padding: 32px 24px;
   text-align: center;
 }
-
 .loading-icon {
   font-size: 52px;
   animation: icon-bounce 1s ease-in-out infinite alternate;
 }
 @keyframes icon-bounce {
   from { transform: translateY(0)    rotate(-4deg); }
-  to   { transform: translateY(-10px) rotate(4deg);  }
+  to   { transform: translateY(-10px) rotate(4deg); }
 }
-
 .loading-title {
   font-family: 'Fredoka One', cursive;
   font-size: 22px;
   color: #9b1313;
   text-shadow: 1px 1px 0 rgba(255,255,255,.4);
 }
-
-/* Error screen */
 .loading-bar-wrap {
-  width: 200px;
-  height: 8px;
+  width: 200px; height: 8px;
   background: rgba(0,0,0,.15);
-  border-radius: 99px;
-  overflow: hidden;
+  border-radius: 99px; overflow: hidden;
 }
 .loading-bar {
-  height: 100%;
-  width: 0%;
+  height: 100%; width: 0%;
   border-radius: 99px;
   background: linear-gradient(90deg, #9b1313, #ff8c00);
   transition: width .18s ease, background .4s ease;
 }
-.loading-bar.bar-done {
-  background: linear-gradient(90deg, #2e7d32, #66bb6a);
-}
-
+.loading-bar.bar-done { background: linear-gradient(90deg, #2e7d32, #66bb6a); }
 .loading-attempt {
-  font-size: 11px;
-  font-weight: 800;
-  color: #6d3a1a;
-  letter-spacing: .5px;
-  font-variant-numeric: tabular-nums;
+  font-size: 11px; font-weight: 800; color: #6d3a1a;
+  letter-spacing: .5px; font-variant-numeric: tabular-nums;
 }
-
-/* Error screen */
 .error-title {
-  font-family: 'Fredoka One', cursive;
-  font-size: 22px;
-  color: #9b1313;
+  font-family: 'Fredoka One', cursive; font-size: 22px; color: #9b1313;
 }
-.error-body {
-  font-size: 13px;
-  font-weight: 700;
-  color: #6d3a1a;
-  line-height: 1.6;
-}
-.error-btn {
-  margin-top: 6px;
-  padding: 10px 32px;
-  font-size: 15px;
-}
+.error-body { font-size: 13px; font-weight: 700; color: #6d3a1a; line-height: 1.6; }
+.error-btn  { margin-top: 6px; padding: 10px 32px; font-size: 15px; }
+
 /* ── Badge — clickable ─────────────────────────────────────────────────────── */
-.badge-clickable {
-  cursor: pointer;
-  user-select: none;
-  transition: all .2s;
-}
+.badge-clickable { cursor: pointer; user-select: none; transition: all .2s; }
 .badge-clickable:hover {
   background: rgba(255,255,255,.55);
   border-color: rgba(255,255,255,.85);
@@ -432,129 +455,13 @@ body {
 }
 .badge-clickable:active { transform: translateY(0); }
 
-/* ── Definition Modal ─────────────────────────────────────────────────────── */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,.0);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  padding: 20px;
-  pointer-events: none;
-  transition: background .2s;
-}
-.modal-overlay.modal-visible {
-  background: rgba(0,0,0,.55);
-  pointer-events: all;
-  backdrop-filter: blur(3px);
-}
-.modal-card {
-  background: linear-gradient(155deg, #fffde7 0%, #fff8e1 100%);
-  border: 3px solid #c95f00;
-  border-radius: 18px;
-  box-shadow: 0 12px 50px rgba(0,0,0,.45), inset 0 2px 0 rgba(255,255,255,.6);
-  max-width: 380px;
-  width: 100%;
-  overflow: hidden;
-  animation: modal-pop .2s cubic-bezier(.34,1.56,.64,1) forwards;
-}
-@keyframes modal-pop {
-  from { transform: scale(.85); opacity: 0; }
-  to   { transform: scale(1);   opacity: 1; }
-}
-.modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: linear-gradient(135deg, #ff8c00 0%, #ffb700 100%);
-  padding: 12px 16px;
-  border-bottom: 2px solid #c95f00;
-}
-.modal-word {
-  font-family: 'Fredoka One', cursive;
-  font-size: 22px;
-  color: #fff;
-  text-shadow: 1px 1px 3px rgba(0,0,0,.25);
-  letter-spacing: 1px;
-  text-transform: uppercase;
-}
-.modal-close {
-  background: rgba(0,0,0,.18);
-  border: none;
-  border-radius: 50%;
-  width: 28px;
-  height: 28px;
-  color: #fff;
-  font-size: 14px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background .15s;
-  flex-shrink: 0;
-}
-.modal-close:hover { background: rgba(0,0,0,.35); }
-.modal-body {
-  padding: 16px;
-  min-height: 70px;
-  display: flex;
-  align-items: center;
-}
-.modal-def {
-  font-size: 14px;
-  line-height: 1.6;
-  color: #4a2c0a;
-  font-weight: 600;
-  margin: 0;
-}
-.modal-loading {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 13px;
-  color: #8d4e02;
-  font-weight: 700;
-}
-.modal-spinner {
-  display: inline-block;
-  width: 18px;
-  height: 18px;
-  border: 3px solid rgba(201,95,0,.25);
-  border-top-color: #c95f00;
-  border-radius: 50%;
-  animation: spin .7s linear infinite;
-  flex-shrink: 0;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
-
-/* ── Badge — clickable ──────────────────────────────────────────────────────── */
-.badge-clickable {
-  cursor: pointer;
-  user-select: none;
-  transition: all .2s;
-}
-.badge-clickable:hover {
-  background: rgba(255,255,255,.55);
-  border-color: rgba(255,255,255,.9);
-  transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(0,0,0,.18);
-}
-.badge-clickable:active { transform: translateY(0); box-shadow: none; }
-
-/* ── Definition Modal ───────────────────────────────────────────────────────── */
+/* ── Definition Modal ──────────────────────────────────────────────────────── */
 .def-modal-overlay {
-  position: fixed;
-  inset: 0;
+  position: fixed; inset: 0;
   background: rgba(0,0,0,.55);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  padding: 16px;
-  opacity: 0;
-  transition: opacity .2s ease;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000; padding: 16px;
+  opacity: 0; transition: opacity .2s ease;
   backdrop-filter: blur(3px);
 }
 .def-modal-overlay.visible { opacity: 1; }
@@ -564,79 +471,100 @@ body {
   border: 3px solid #c95f00;
   border-radius: 18px;
   box-shadow: 0 16px 60px rgba(0,0,0,.45);
-  width: 100%;
-  max-width: 380px;
+  width: 100%; max-width: 380px;
   transform: scale(.92) translateY(8px);
   transition: transform .22s cubic-bezier(.34,1.56,.64,1);
   overflow: hidden;
 }
-.def-modal-overlay.visible .def-modal {
-  transform: scale(1) translateY(0);
-}
+.def-modal-overlay.visible .def-modal { transform: scale(1) translateY(0); }
 
 .def-modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: flex; align-items: center; justify-content: space-between;
   padding: 14px 16px 10px;
   border-bottom: 2px solid rgba(201,95,0,.25);
   background: linear-gradient(90deg, #ff8c00, #ffb700);
 }
 .def-modal-word {
-  font-family: 'Fredoka One', cursive;
-  font-size: 22px;
-  color: #fff;
-  letter-spacing: 1px;
-  text-shadow: 1px 2px 4px rgba(0,0,0,.25);
+  font-family: 'Fredoka One', cursive; font-size: 22px;
+  color: #fff; letter-spacing: 1px; text-shadow: 1px 2px 4px rgba(0,0,0,.25);
 }
 .def-modal-close {
-  background: rgba(255,255,255,.25);
-  border: none;
-  border-radius: 50%;
-  width: 28px;
-  height: 28px;
-  font-size: 14px;
-  color: #fff;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background .15s;
-  flex-shrink: 0;
+  background: rgba(255,255,255,.25); border: none; border-radius: 50%;
+  width: 28px; height: 28px; font-size: 14px; color: #fff;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: background .15s; flex-shrink: 0;
 }
 .def-modal-close:hover { background: rgba(255,255,255,.45); }
 
 .def-modal-body {
-  padding: 10px;
-  display: flex;
-  align-items: center;
+  padding: 10px; display: flex; align-items: center;
 }
-
 .def-loading {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: #6d3a1a;
-  font-size: 13px;
-  font-weight: 700;
+  display: flex; align-items: center; gap: 10px;
+  color: #6d3a1a; font-size: 13px; font-weight: 700;
 }
 .def-spinner {
-  width: 20px;
-  height: 20px;
-  border: 3px solid #ffb700;
-  border-top-color: #c95f00;
-  border-radius: 50%;
-  animation: spin .7s linear infinite;
-  flex-shrink: 0;
+  width: 20px; height: 20px;
+  border: 3px solid #ffb700; border-top-color: #c95f00;
+  border-radius: 50%; animation: spin .7s linear infinite; flex-shrink: 0;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
-
 .def-text {
+  font-size: 13px; line-height: 1.6; color: #3e2000;
+  font-weight: 600; white-space: pre-wrap;
+  max-height: 400px; overflow: auto;
+}
+
+/* ── High Score Modal ──────────────────────────────────────────────────────── */
+.hs-modal { max-width: 420px; }
+
+.hs-body {
+  padding: 0 !important;
+  display: block !important;
+}
+
+.hs-table {
+  width: 100%;
+  border-collapse: collapse;
   font-size: 13px;
-  line-height: 1.6;
-  color: #3e2000;
-  font-weight: 600;
-  white-space: pre-wrap;
-  max-height: 400px;
-  overflow: auto;
+}
+.hs-table thead tr {
+  background: rgba(155, 19, 19, .07);
+  border-bottom: 1.5px solid rgba(201,95,0,.2);
+}
+.hs-table th {
+  padding: 7px 10px;
+  font-family: 'Fredoka One', cursive;
+  font-size: 11px;
+  color: #9b1313;
+  text-align: left;
+  letter-spacing: .5px;
+}
+.hs-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(0,0,0,.06);
+  vertical-align: middle;
+}
+.hs-table tr:last-child td { border-bottom: none; }
+
+.hs-top td { background: rgba(255,215,0,.18); }
+
+.hs-rank {
+  font-family: 'Fredoka One', cursive;
+  font-size: 14px;
+  width: 36px;
+  color: #6d3a1a;
+}
+.hs-score {
+  font-family: 'Fredoka One', cursive;
+  font-size: 18px;
+  color: #9b1313;
+}
+.hs-total { font-size: 11px; color: #6d3a1a; }
+.hs-stars { font-size: 13px; letter-spacing: 1px; color: #c95f00; }
+.hs-date  { font-size: 11px; font-weight: 700; color: #5d4037; line-height: 1.4; }
+.hs-time  { font-size: 10px; color: #8d6e63; font-weight: 600; }
+.hs-empty {
+  text-align: center; padding: 24px !important;
+  font-size: 13px; font-weight: 700; color: #8d6e63;
 }

@@ -20,17 +20,17 @@ export interface Tile {
   revealed: boolean; // player has scratched this hand/bonus tile
 }
 
-export interface PrizeTier {
+export interface HighScore {
   words: number;
-  prize: string;
+  date:  string; // ISO timestamp
 }
 
 export interface GameState {
-  grid:            Cell[][];
-  words:           Word[];
-  hand:            Tile[];   // 18 unique random letters
-  bonus:           Tile[];   // 2 unique random letters, scratchable any time
+  grid:                Cell[][];
+  words:               Word[];
+  hand:                Tile[];   // unique random letters
+  bonus:               Tile[];   // bonus letters, scratchable any time
   revealedLetters:     Set<string>;
-  animatedCells:       Set<string>;  // cells that just got scratched (for pop animation)
-  newlyAvailableCells: Set<string>;  // cells that just became scratchable (for discover animation)
+  animatedCells:       Set<string>;  // cells that just got scratched (pop animation)
+  newlyAvailableCells: Set<string>;  // cells that just became scratchable (discover animation)
 }

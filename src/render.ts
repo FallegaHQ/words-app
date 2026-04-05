@@ -1,8 +1,8 @@
-import { PRIZES } from './constants';
+import { GRID_SIZE, TARGET_WORDS } from './constants';
 import { tileIsUseful } from './gameLogic';
-import type { GameState } from './types';
+import type { GameState, HighScore } from './types';
 
-// ── Public render function ────────────────────────────────────────────────────
+// ── Callbacks ────────────────────────────────────────────────────────────────
 
 export interface RenderCallbacks {
   onRevealTile:        (idx: number, isBonus: boolean) => void;
@@ -12,15 +12,49 @@ export interface RenderCallbacks {
   onScratchAllAvail:   () => void;
   onNewGame:           () => void;
   onWordClick:         (word: string) => void;
+  onDifficultyChange:  (difficulty: number) => void;
+  onShowHighScores:    () => void;
 }
 
-export function render(state: GameState, cb: RenderCallbacks): void {
-  const root = document.getElementById('app')!;
-  root.innerHTML = buildHTML(state);
-  attachListeners(state, cb, root);
+// ── Ref-based render state ────────────────────────────────────────────────────
+
+interface AppRefs {
+  cells:          HTMLElement[][];  // [GRID_SIZE][GRID_SIZE]
+  handTiles:      HTMLElement[];
+  bonusTiles:     HTMLElement[];
+  badges:         HTMLElement[];
+  hint:           HTMLElement;
+  scoreBar:       HTMLElement;
+  scratchAvailBtn: HTMLElement;
 }
+
+let _refs: AppRefs | null = null;
+
+/** Call before renderLoading / renderError — forces a full DOM rebuild next render(). */
+export function resetRenderer(): void {
+  _refs = null;
+}
+
+// ── Main render entry point ───────────────────────────────────────────────────
+
+/**
+ * On first call after reset: builds full HTML, captures refs, binds listeners.
+ * On subsequent calls: applies targeted DOM updates (no innerHTML, no re-binding).
+ */
+export function render(state: GameState, cb: RenderCallbacks, difficulty: number): void {
+  const root = document.getElementById('app')!;
+  if (!_refs) {
+    root.innerHTML = buildInitialHTML(state, difficulty);
+    _refs = captureAndBindRefs(root, state, cb);
+    return;
+  }
+  applyStateToRefs(_refs, state);
+}
+
+// ── Loading / Error screens ───────────────────────────────────────────────────
 
 export function renderLoading(): void {
+  resetRenderer();
   document.getElementById('app')!.innerHTML = `
   <div class="ticket screen-card">
     <div class="screen-inner">
@@ -35,25 +69,26 @@ export function renderLoading(): void {
 }
 
 export function updateLoadingProgress(attempt: number, max: number, done: boolean): void {
-  const icon    = document.getElementById('load-icon');
-  const title   = document.getElementById('load-title');
-  const bar     = document.getElementById('load-bar');
-  const attempt_el = document.getElementById('load-attempt');
-  if (!icon || !title || !bar || !attempt_el) return;
+  const icon       = document.getElementById('load-icon');
+  const title      = document.getElementById('load-title');
+  const bar        = document.getElementById('load-bar');
+  const attemptEl  = document.getElementById('load-attempt');
+  if (!icon || !title || !bar || !attemptEl) return;
 
   if (done) {
-    icon.textContent    = '🎉';
-    title.textContent   = 'Ticket ready!';
-    bar.style.width     = '100%';
+    icon.textContent      = '🎉';
+    title.textContent     = 'Ticket ready!';
+    bar.style.width       = '100%';
     bar.classList.add('bar-done');
-    attempt_el.textContent = `Found in ${attempt} attempt${attempt !== 1 ? 's' : ''}`;
+    attemptEl.textContent = `Found in ${attempt} attempt${attempt !== 1 ? 's' : ''}`;
   } else {
-    bar.style.width        = `${Math.round((attempt / max) * 100)}%`;
-    attempt_el.textContent = `Attempt ${attempt} / ${max}`;
+    bar.style.width       = `${Math.round((attempt / max) * 100)}%`;
+    attemptEl.textContent = `Attempt ${attempt} / ${max}`;
   }
 }
 
 export function renderError(onRetry: () => void): void {
+  resetRenderer();
   document.getElementById('app')!.innerHTML = `
   <div class="ticket screen-card">
     <div class="screen-inner">
@@ -66,125 +101,141 @@ export function renderError(onRetry: () => void): void {
   document.getElementById('btn-retry')!.addEventListener('click', onRetry);
 }
 
-// ── HTML builders ─────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-function buildHTML(s: GameState): string {
-  const completeCount = s.words.filter(w => w.complete).length;
-  const prize = PRIZES.filter(p => p.words <= completeCount).at(-1) ?? null;
-  const allRevealed   = s.hand.every(t => t.revealed) && s.bonus.every(t => t.revealed);
-
-  return `
-  <div class="ticket">
-    ${buildHeader()}
-    <div class="main-row">
-      ${buildPrizeKey(s, prize)}
-      <div class="grid-col">
-        ${buildBadges(s)}
-        ${buildGrid(s)}
-        <div class="grid-hint">
-          ${gridHint(s)}
-        </div>
-      </div>
-    </div>
-    <div class="bottom-section">
-      ${buildHand(s)}
-      ${buildBonus(s)}
-    </div>
-    ${buildPrizeReveal(completeCount, prize, allRevealed)}
-    ${buildButtons(s, allRevealed)}
-  </div>`;
+function setClass(el: HTMLElement, cls: string): void {
+  if (el.className !== cls) el.className = cls;
 }
 
-function buildHeader(): string {
-  return `
-  <div class="hdr">
-    <div class="hdr-title">🏖️ LUCKY LETTERS 🏖️</div>
-    <div class="hdr-sub">20 words · scratch tiles then scratch grid cells to win!</div>
-  </div>`;
+function setText(el: HTMLElement, text: string): void {
+  if (el.textContent !== text) el.textContent = text;
 }
 
-function buildPrizeKey(s: GameState, prize: { prize: string } | null): string {
-  const completeCount = s.words.filter(w => w.complete).length;
-  const rows = PRIZES.map(p => {
-    const won = completeCount >= p.words;
-    const best = prize && prize.prize === p.prize;
-    return `<div class="pk-row${best ? ' active' : won ? ' reached' : ''}">
-      <span class="wl">${p.words}w</span>
-      <span class="am">${p.prize}</span>
-    </div>`;
-  }).join('');
-  return `
-  <div class="prize-key">
-    <div class="pk-title">PRIZE KEY</div>
-    ${rows}
-  </div>`;
-}
-
-function buildGrid(s: GameState): string {
-  const cells = s.grid.map((row, r) =>
-    row.map((cell, c) => {
-      const isWordCell = cell.wordIds.length > 0;
-
-      if (cell.isWild) {
-        const done = cell.wordIds.some(id => s.words.find(w => w.id === id)?.complete);
-        if (cell.scratched) {
-          const justScratched = s.animatedCells.has(`${r},${c}`);
-          return `<div class="cell cell-wild scratched${done ? ' word-done' : ''}${justScratched ? ' just-scratched' : ''}" title="Wildcard">${cell.letter}</div>`;
-        }
-        return `<div class="cell cell-wild available" data-r="${r}" data-c="${c}" title="Wildcard — scratch for free!">⭐</div>`;
-      }
-
-      if (!isWordCell) {
-        // Filler: show letter, dimmed, not interactive
-        return `<div class="cell cell-fill">${cell.letter}</div>`;
-      }
-
-      // Word cell
-      if (cell.scratched) {
-        const wordDone = cell.wordIds.some(id => s.words.find(w => w.id === id)?.complete);
-        const justScratched = s.animatedCells.has(`${r},${c}`);
-        return `<div class="cell cell-word scratched${wordDone ? ' word-done' : ''}${justScratched ? ' just-scratched' : ''}">${cell.letter}</div>`;
-      }
-
-      const available = s.revealedLetters.has(cell.letter);
-      if (available) {
-        const animateIn = s.newlyAvailableCells.has(`${r},${c}`);
-        return `<div class="cell cell-word available${animateIn ? ' animate-in' : ''}" data-r="${r}" data-c="${c}" title="Click to scratch!">${cell.letter}</div>`;
-      }
-
-      return `<div class="cell cell-word locked">${cell.letter}</div>`;
-    }).join('')
-  ).join('');
-
-  return `<div class="grid">${cells}</div>`;
-}
-
-function buildBadges(s: GameState): string {
-  const badges = s.words.map(w =>
-    `<div class="badge${w.complete ? ' done' : ''} badge-clickable" data-word="${w.text}" title="Click to see definition">${w.text}</div>`
-  ).join('');
-  return `<div class="badges">${badges}</div>`;
-}
-
-function gridHint(s: GameState): string {
-  const avail = s.grid.flat().filter(
+function countAvail(state: GameState): number {
+  return state.grid.flat().filter(
     c => c.wordIds.length > 0 && !c.scratched &&
-         (c.isWild || s.revealedLetters.has(c.letter))
+         (c.isWild || state.revealedLetters.has(c.letter))
   ).length;
-  if (avail > 0) return `<span class="hint-avail">👆 ${avail} cell${avail !== 1 ? 's' : ''} ready to scratch!</span>`;
-  if (s.hand.some(t => !t.revealed)) return `<span class="hint-idle">Scratch a tile below to reveal letters</span>`;
+}
+
+function scoreToStars(words: number): string {
+  const ratio = words / TARGET_WORDS;
+  const n = ratio === 0 ? 0 : ratio < 0.2 ? 1 : ratio < 0.4 ? 2 : ratio < 0.6 ? 3 : ratio < 0.85 ? 4 : 5;
+  return '★'.repeat(n) + '☆'.repeat(5 - n);
+}
+
+// ── Cell class / content ──────────────────────────────────────────────────────
+
+function cellClass(r: number, c: number, cell: import('./types').Cell, state: GameState): string {
+  if (cell.isWild) {
+    const done = cell.wordIds.some(id => state.words.find(w => w.id === id)?.complete);
+    if (cell.scratched) {
+      const just = state.animatedCells.has(`${r},${c}`);
+      return `cell cell-wild scratched${done ? ' word-done' : ''}${just ? ' just-scratched' : ''}`;
+    }
+    return 'cell cell-wild available';
+  }
+  if (cell.wordIds.length === 0) return 'cell cell-fill';
+
+  if (cell.scratched) {
+    const done = cell.wordIds.some(id => state.words.find(w => w.id === id)?.complete);
+    const just = state.animatedCells.has(`${r},${c}`);
+    return `cell cell-word scratched${done ? ' word-done' : ''}${just ? ' just-scratched' : ''}`;
+  }
+  if (state.revealedLetters.has(cell.letter)) {
+    const animIn = state.newlyAvailableCells.has(`${r},${c}`);
+    return `cell cell-word available${animIn ? ' animate-in' : ''}`;
+  }
+  return 'cell cell-word locked';
+}
+
+function cellContent(cell: import('./types').Cell): string {
+  if (cell.isWild && !cell.scratched) return '⭐';
+  return cell.letter;
+}
+
+function tileClass(tile: import('./types').Tile, isBonus: boolean, state: GameState): string {
+  let cls = 'tile';
+  if (isBonus) cls += ' bonus-tile';
+  if (tile.revealed) {
+    cls += ' revealed';
+    if (tileIsUseful(tile.letter, state)) cls += ' useful';
+  } else {
+    cls += ' hidden';
+  }
+  return cls;
+}
+
+// ── Score bar HTML ────────────────────────────────────────────────────────────
+
+function scoreBarHTML(completeCount: number): string {
+  const stars = scoreToStars(completeCount);
+  return `<span class="score-count">${completeCount}<span class="score-total"> / ${TARGET_WORDS}</span></span>
+          <span class="score-label">words</span>
+          <span class="score-stars">${stars}</span>`;
+}
+
+// ── Hint HTML ─────────────────────────────────────────────────────────────────
+
+function hintHTML(state: GameState): string {
+  const avail = countAvail(state);
+  if (avail > 0)
+    return `<span class="hint-avail">👆 ${avail} cell${avail !== 1 ? 's' : ''} ready to scratch!</span>`;
+  if (state.hand.some(t => !t.revealed))
+    return `<span class="hint-idle">Scratch a tile below to reveal letters</span>`;
   return `<span class="hint-idle">Scratch bonus tiles or start a new ticket</span>`;
 }
 
-function buildHand(s: GameState): string {
-  const tiles = s.hand.map((t, i) => {
+// ── Full initial HTML build ───────────────────────────────────────────────────
+
+function buildHeader(difficulty: number): string {
+  const level = difficulty <= 0.3 ? 'easy' : difficulty <= 0.65 ? 'medium' : 'hard';
+  return `
+  <div class="hdr">
+    <div class="hdr-title">🏖️ LUCKY LETTERS 🏖️</div>
+    <div class="hdr-row">
+      <div class="hdr-sub">20 words · scratch tiles then scratch grid cells!</div>
+      <div class="hdr-actions">
+        <div class="diff-control">
+          <span class="diff-label">LEVEL</span>
+          <div class="diff-pills">
+            <button class="diff-pill${level === 'easy'   ? ' active' : ''}" data-diff="easy">Easy</button>
+            <button class="diff-pill${level === 'medium' ? ' active' : ''}" data-diff="medium">Med</button>
+            <button class="diff-pill${level === 'hard'   ? ' active' : ''}" data-diff="hard">Hard</button>
+          </div>
+        </div>
+        <button id="btn-hs" class="btn-hs" title="High Scores">🏆</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function buildGridHTML(state: GameState): string {
+  const cells = state.grid.flatMap((row, r) =>
+    row.map((cell, c) => {
+      const cls     = cellClass(r, c, cell, state);
+      const content = cellContent(cell);
+      return `<div class="${cls}">${content}</div>`;
+    })
+  ).join('');
+  return `<div class="grid">${cells}</div>`;
+}
+
+function buildBadgesHTML(state: GameState): string {
+  const items = state.words.map(w =>
+    `<div class="badge badge-clickable${w.complete ? ' done' : ''}">${w.text}</div>`
+  ).join('');
+  return `<div class="badges">${items}</div>`;
+}
+
+function buildHandHTML(state: GameState): string {
+  const tiles = state.hand.map((t, _i) => {
     if (t.revealed) {
-      const useful = tileIsUseful(t.letter, s);
+      const useful = tileIsUseful(t.letter, state);
       return `<div class="tile revealed${useful ? ' useful' : ''}">${t.letter}</div>`;
     }
-    return `<div class="tile hidden" data-tile="${i}" title="Scratch me!"></div>`;
+    return `<div class="tile hidden"></div>`;
   }).join('');
-
   return `
   <div class="hand-section">
     <div class="section-label">YOUR LETTERS <span class="sub-hint">(scratch to reveal)</span></div>
@@ -192,15 +243,14 @@ function buildHand(s: GameState): string {
   </div>`;
 }
 
-function buildBonus(s: GameState): string {
-  const tiles = s.bonus.map((t, i) => {
+function buildBonusHTML(state: GameState): string {
+  const tiles = state.bonus.map((t, _i) => {
     if (t.revealed) {
-      const useful = tileIsUseful(t.letter, s);
+      const useful = tileIsUseful(t.letter, state);
       return `<div class="tile bonus-tile revealed${useful ? ' useful' : ''}">${t.letter}</div>`;
     }
-    return `<div class="tile bonus-tile hidden" data-bonus="${i}" title="Bonus — scratch anytime!">🎁</div>`;
+    return `<div class="tile bonus-tile hidden">🎁</div>`;
   }).join('');
-
   return `
   <div class="bonus-section">
     <div class="section-label">BONUS <span class="sub-hint">(scratch anytime)</span></div>
@@ -208,135 +258,246 @@ function buildBonus(s: GameState): string {
   </div>`;
 }
 
-function buildPrizeReveal(
-  completeCount: number,
-  prize: { prize: string } | null,
-  allRevealed: boolean
-): string {
-  if (!allRevealed && completeCount === 0) return '';
-  const plural = completeCount !== 1 ? 'S' : '';
-  const prizeHTML = prize
-    ? `<div class="pr-amount">🎉 ${prize.prize}!</div>`
-    : `<div class="pr-amount no-prize">No Prize Yet</div>
-       <div class="pr-none">Complete 3+ words to win</div>`;
+function buildInitialHTML(state: GameState, difficulty: number): string {
+  const completeCount = state.words.filter(w => w.complete).length;
+  const avail         = countAvail(state);
+
   return `
-  <div class="prize-reveal show">
-    <div class="pr-count">${completeCount} WORD${plural} COMPLETE</div>
-    ${prizeHTML}
+  <div class="ticket">
+    ${buildHeader(difficulty)}
+    <div class="grid-section">
+      ${buildBadgesHTML(state)}
+      ${buildGridHTML(state)}
+      <div class="grid-hint">${hintHTML(state)}</div>
+    </div>
+    <div class="bottom-section">
+      ${buildHandHTML(state)}
+      ${buildBonusHTML(state)}
+    </div>
+    <div class="score-bar">${scoreBarHTML(completeCount)}</div>
+    <div class="btn-row">
+      <button id="btn-scratch-avail" class="btn btn-secondary"${avail === 0 ? ' style="display:none"' : ''}>🖊 Scratch All Available</button>
+      <button id="btn-new-game" class="btn btn-primary">🎰 New Ticket</button>
+    </div>
   </div>`;
 }
 
-function buildButtons(s: GameState, allRevealed: boolean): string {
-  const unrevealed = s.hand.filter(t => !t.revealed).length;
-  const avail = s.grid.flat().filter(
-    c => c.wordIds.length > 0 && !c.scratched &&
-         (c.isWild || s.revealedLetters.has(c.letter))
-  ).length;
+// ── Ref capture + listener binding ───────────────────────────────────────────
 
-  const btns: string[] = [];
+function captureAndBindRefs(root: HTMLElement, state: GameState, cb: RenderCallbacks): AppRefs {
+  // ── Cells (row-major order matches DOM order) ─────────────────────────────
+  const allCellEls = root.querySelectorAll<HTMLElement>('.cell');
+  const cells: HTMLElement[][] = [];
+  for (let r = 0; r < GRID_SIZE; r++) {
+    cells[r] = [];
+    for (let c = 0; c < GRID_SIZE; c++) {
+      cells[r][c] = allCellEls[r * GRID_SIZE + c];
+    }
+  }
 
-  if (unrevealed > 0 && false)
-    btns.push(`<button id="btn-reveal-all" class="btn btn-secondary">⚡ Reveal All (${unrevealed})</button>`);
-  if (avail > 0)
-    btns.push(`<button id="btn-scratch-avail" class="btn btn-secondary">🖊 Scratch All Available</button>`);
-  if (!allRevealed && unrevealed === 0 && false)
-    btns.push(`<button id="btn-reveal-bonus" class="btn btn-secondary">🎁 Reveal Bonus</button>`);
+  // ── Tiles ──────────────────────────────────────────────────────────────────
+  const handTiles  = Array.from(root.querySelectorAll<HTMLElement>('.hand-section .tile'));
+  const bonusTiles = Array.from(root.querySelectorAll<HTMLElement>('.bonus-section .tile'));
 
-  btns.push(`<button id="btn-new-game" class="btn btn-primary">🎰 New Ticket</button>`);
+  // ── Badges, hint, score bar, buttons ────────────────────────────────────────
+  const badges         = Array.from(root.querySelectorAll<HTMLElement>('.badge'));
+  const hint           = root.querySelector<HTMLElement>('.grid-hint')!;
+  const scoreBar       = root.querySelector<HTMLElement>('.score-bar')!;
+  const scratchAvailBtn = root.querySelector<HTMLElement>('#btn-scratch-avail')!;
 
-  return `<div class="btn-row">${btns.join('')}</div>`;
-}
+  const refs: AppRefs = { cells, handTiles, bonusTiles, badges, hint, scoreBar, scratchAvailBtn };
 
-// ── Event listeners ───────────────────────────────────────────────────────────
+  // ── Attach click listeners ────────────────────────────────────────────────
 
-function attachListeners(_s: GameState, cb: RenderCallbacks, root: HTMLElement): void {
-  // Word badges → definition modal
-  root.querySelectorAll<HTMLElement>('[data-word]').forEach(el => {
-    el.addEventListener('click', () => cb.onWordClick(el.dataset.word!));
-  });
+  // Cells: attach to all word + wild cells; game logic validates scratching
+  for (let r = 0; r < GRID_SIZE; r++) {
+    for (let c = 0; c < GRID_SIZE; c++) {
+      const cell = state.grid[r][c];
+      if (cell.wordIds.length > 0 || cell.isWild) {
+        const rr = r, cc = c;
+        cells[r][c].addEventListener('click', () => cb.onScratchCell(rr, cc));
+      }
+    }
+  }
 
   // Hand tiles
-  root.querySelectorAll<HTMLElement>('[data-tile]').forEach(el => {
-    el.addEventListener('click', () => cb.onRevealTile(Number(el.dataset.tile), false));
+  handTiles.forEach((el, i) => {
+    el.addEventListener('click', () => cb.onRevealTile(i, false));
   });
 
   // Bonus tiles
-  root.querySelectorAll<HTMLElement>('[data-bonus]').forEach(el => {
-    el.addEventListener('click', () => cb.onRevealTile(Number(el.dataset.bonus), true));
+  bonusTiles.forEach((el, i) => {
+    el.addEventListener('click', () => cb.onRevealTile(i, true));
   });
 
-  // Grid cells (available word cells)
-  root.querySelectorAll<HTMLElement>('[data-r]').forEach(el => {
-    el.addEventListener('click', () =>
-      cb.onScratchCell(Number(el.dataset.r), Number(el.dataset.c))
-    );
+  // Word badges
+  badges.forEach((el, i) => {
+    const word = state.words[i].text;
+    el.addEventListener('click', () => cb.onWordClick(word));
   });
 
   // Buttons
-  root.querySelector('#btn-reveal-all')
-      ?.addEventListener('click', cb.onRevealAllHand);
-  root.querySelector('#btn-reveal-bonus')
-      ?.addEventListener('click', cb.onRevealAllBonus);
-  root.querySelector('#btn-scratch-avail')
-      ?.addEventListener('click', cb.onScratchAllAvail);
-  root.querySelector('#btn-new-game')
-      ?.addEventListener('click', cb.onNewGame);
+  scratchAvailBtn.addEventListener('click', cb.onScratchAllAvail);
+  root.querySelector('#btn-new-game')!.addEventListener('click', cb.onNewGame);
+  root.querySelector('#btn-hs')!.addEventListener('click', cb.onShowHighScores);
+
+  // Difficulty pills
+  root.querySelectorAll<HTMLElement>('.diff-pill').forEach(el => {
+    el.addEventListener('click', () => {
+      const key = el.dataset.diff!;
+      const val = key === 'easy' ? 0.2 : key === 'hard' ? 0.85 : 0.55;
+      cb.onDifficultyChange(val);
+      root.querySelectorAll('.diff-pill').forEach(p => p.classList.remove('active'));
+      el.classList.add('active');
+    });
+  });
+
+  return refs;
 }
+
+// ── Targeted DOM update ───────────────────────────────────────────────────────
+
+function applyStateToRefs(refs: AppRefs, state: GameState): void {
+  const { cells, handTiles, bonusTiles, badges, hint, scoreBar, scratchAvailBtn } = refs;
+
+  // Grid cells
+  for (let r = 0; r < GRID_SIZE; r++) {
+    for (let c = 0; c < GRID_SIZE; c++) {
+      const el   = cells[r][c];
+      const cell = state.grid[r][c];
+      setClass(el, cellClass(r, c, cell, state));
+      setText(el, cellContent(cell));
+    }
+  }
+
+  // Hand tiles
+  state.hand.forEach((tile, i) => {
+    const el = handTiles[i];
+    setClass(el, tileClass(tile, false, state));
+    setText(el, tile.revealed ? tile.letter : '');
+  });
+
+  // Bonus tiles
+  state.bonus.forEach((tile, i) => {
+    const el = bonusTiles[i];
+    setClass(el, tileClass(tile, true, state));
+    setText(el, tile.revealed ? tile.letter : '🎁');
+  });
+
+  // Badges
+  state.words.forEach((word, i) => {
+    setClass(badges[i], `badge badge-clickable${word.complete ? ' done' : ''}`);
+  });
+
+  // Hint
+  hint.innerHTML = hintHTML(state);
+
+  // Score bar
+  const completeCount = state.words.filter(w => w.complete).length;
+  scoreBar.innerHTML = scoreBarHTML(completeCount);
+
+  // Scratch avail button
+  scratchAvailBtn.style.display = countAvail(state) > 0 ? '' : 'none';
+}
+
 // ── Definition Modal ──────────────────────────────────────────────────────────
 
-const MODAL_ID = 'def-modal-overlay';
+const DEF_MODAL_ID = 'def-modal-overlay';
 
-/**
- * Show (or update) the definition modal.
- * Call with definition=null to show a loading spinner.
- * Call with a string to show the definition.
- */
 export function showDefinitionModal(word: string, definition: string | null): void {
-  // Remove any existing modal first
-  document.getElementById(MODAL_ID)?.remove();
+  document.getElementById(DEF_MODAL_ID)?.remove();
 
   const overlay = document.createElement('div');
-  overlay.id = MODAL_ID;
+  overlay.id = DEF_MODAL_ID;
   overlay.className = 'def-modal-overlay';
   overlay.innerHTML = `
-    <div class="def-modal" role="dialog" aria-modal="true" aria-label="Definition of ${word}">
+    <div class="def-modal" role="dialog" aria-modal="true">
       <div class="def-modal-header">
         <span class="def-modal-word">${word}</span>
         <button class="def-modal-close" aria-label="Close">✕</button>
       </div>
       <div class="def-modal-body">
         ${definition === null
-          ? `<div class="def-loading">
-               <div class="def-spinner"></div>
-               <span>Loading dictionary…</span>
-             </div>`
+          ? `<div class="def-loading"><div class="def-spinner"></div><span>Loading dictionary…</span></div>`
           : `<p class="def-text">${definition}</p>`
         }
       </div>
     </div>`;
 
-  // Close on overlay click (outside modal card)
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) hideDefinitionModal();
-  });
-
-  // Close button
-  overlay.querySelector('.def-modal-close')!
-    .addEventListener('click', hideDefinitionModal);
-
-  // Close on Escape
+  overlay.addEventListener('click', e => { if (e.target === overlay) hideDefinitionModal(); });
+  overlay.querySelector('.def-modal-close')!.addEventListener('click', hideDefinitionModal);
   const onKey = (e: KeyboardEvent) => {
     if (e.key === 'Escape') { hideDefinitionModal(); document.removeEventListener('keydown', onKey); }
   };
   document.addEventListener('keydown', onKey);
-
   document.body.appendChild(overlay);
-  // Trigger CSS enter animation on next frame
   requestAnimationFrame(() => overlay.classList.add('visible'));
 }
 
 export function hideDefinitionModal(): void {
-  const overlay = document.getElementById(MODAL_ID);
+  const overlay = document.getElementById(DEF_MODAL_ID);
+  if (!overlay) return;
+  overlay.classList.remove('visible');
+  overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
+}
+
+// ── High Score Modal ──────────────────────────────────────────────────────────
+
+const HS_MODAL_ID = 'hs-modal-overlay';
+
+export function showHighScoreModal(scores: HighScore[]): void {
+  document.getElementById(HS_MODAL_ID)?.remove();
+
+  const top10 = [...scores].sort((a, b) => b.words - a.words).slice(0, 10);
+
+  const rows = top10.length === 0
+    ? `<tr><td colspan="4" class="hs-empty">No scores yet — play a game!</td></tr>`
+    : top10.map((s, i) => {
+        const d = new Date(s.date);
+        const date = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+        const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+        const stars = scoreToStars(s.words);
+        return `<tr class="${i === 0 ? 'hs-top' : ''}">
+          <td class="hs-rank">${i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}</td>
+          <td class="hs-score">${s.words} <span class="hs-total">/ ${TARGET_WORDS}</span></td>
+          <td class="hs-stars">${stars}</td>
+          <td class="hs-date">${date}<br><span class="hs-time">${time}</span></td>
+        </tr>`;
+      }).join('');
+
+  const overlay = document.createElement('div');
+  overlay.id = HS_MODAL_ID;
+  overlay.className = 'def-modal-overlay';
+  overlay.innerHTML = `
+    <div class="def-modal hs-modal" role="dialog" aria-modal="true">
+      <div class="def-modal-header">
+        <span class="def-modal-word">🏆 High Scores</span>
+        <button class="def-modal-close" aria-label="Close">✕</button>
+      </div>
+      <div class="def-modal-body hs-body">
+        <table class="hs-table">
+          <thead>
+            <tr>
+              <th>#</th><th>Score</th><th>Stars</th><th>Date</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+
+  overlay.addEventListener('click', e => { if (e.target === overlay) hideHighScoreModal(); });
+  overlay.querySelector('.def-modal-close')!.addEventListener('click', hideHighScoreModal);
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') { hideHighScoreModal(); document.removeEventListener('keydown', onKey); }
+  };
+  document.addEventListener('keydown', onKey);
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add('visible'));
+}
+
+export function hideHighScoreModal(): void {
+  const overlay = document.getElementById(HS_MODAL_ID);
   if (!overlay) return;
   overlay.classList.remove('visible');
   overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
