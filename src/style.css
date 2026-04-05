@@ -165,7 +165,7 @@ body {
   align-items: center;
   justify-content: center;
   font-family: 'Fredoka One', cursive;
-  font-size: 12px;
+  font-size: 14px;
   border-radius: 2px;
   user-select: none;
   transition: background .2s, transform .15s;
@@ -233,7 +233,7 @@ body {
   box-shadow: 0 0 0 2px rgba(249,168,37,.35);
 }
 .cell-wild.available:hover {
-  background: #ffe082;
+  background: #ff0000;
   transform: scale(1.18);
   z-index: 1;
   box-shadow: 0 2px 8px rgba(0,0,0,.25);
@@ -260,7 +260,7 @@ body {
 
 /* ── Hand section ──────────────────────────────────────────────────────────── */
 .hand-section  { flex: 1; }
-.bonus-section { flex-shrink: 0; text-align: center; }
+.bonus-section { flex-shrink: 1; text-align: center }
 .section-label {
   font-family: 'Fredoka One', cursive;
   font-size: 12px;
@@ -273,7 +273,7 @@ body {
 
 /* ── Tile grid (hand) ──────────────────────────────────────────────────────── */
 .tile-grid   { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
-.bonus-tiles { display: flex; gap: 8px; justify-content: center; margin-top: 2px; }
+.bonus-tiles { display: flex; gap: 8px; justify-content: center; margin-top: 2px; items-aligh: center}
 
 /* ── Tile ──────────────────────────────────────────────────────────────────── */
 .tile {
@@ -283,7 +283,7 @@ body {
   align-items: center;
   justify-content: center;
   font-family: 'Fredoka One', cursive;
-  font-size: 16px;
+  font-size: 15px;
   border: 2px solid;
   transition: all .2s;
   user-select: none;
@@ -329,7 +329,7 @@ body {
 }
 
 .tile.bonus-tile.revealed { border-color: #e65100; }
-.bonus-section .tile { width: 44px; height: 44px; }
+.bonus-section .tile { width: 32px; height: 32px; }
 
 /* ── Score bar ─────────────────────────────────────────────────────────────── */
 .score-bar {

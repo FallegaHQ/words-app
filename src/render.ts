@@ -253,7 +253,7 @@ function buildBonusHTML(state: GameState): string {
   }).join('');
   return `
   <div class="bonus-section">
-    <div class="section-label">BONUS <span class="sub-hint">(scratch anytime)</span></div>
+    <div class="section-label">BONUS</div>
     <div class="bonus-tiles">${tiles}</div>
   </div>`;
 }
