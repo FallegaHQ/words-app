@@ -14,7 +14,7 @@ export const ALPHABET         = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
  * 1 = fully rigged (worst possible letters, hardest possible words)
  * Recommended sweet spot: 0.7–0.85
  */
-export const DIFFICULTY = 0.4;
+export const DIFFICULTY = 0.55;
  
 export const PRIZES: PrizeTier[] = [
   { words: 2,  prize: '0' },
