@@ -41,6 +41,18 @@
     ".svg": {
       "enabled": false,
       "run": "lemminx"
+    },
+    ".mjs": {
+      "enabled": false,
+      "run": "typescript-language-server --stdio"
+    },
+    ".md": {
+      "enabled": false,
+      "run": "marksman server"
+    },
+    ".py": {
+      "enabled": false,
+      "run": "pylsp"
     }
   }
 }

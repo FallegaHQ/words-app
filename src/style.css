@@ -607,8 +607,7 @@ body {
 .def-modal-close:hover { background: rgba(255,255,255,.45); }
 
 .def-modal-body {
-  padding: 16px;
-  min-height: 70px;
+  padding: 10px;
   display: flex;
   align-items: center;
 }
@@ -638,4 +637,6 @@ body {
   color: #3e2000;
   font-weight: 600;
   white-space: pre-wrap;
+  max-height: 400px;
+  overflow: auto;
 }

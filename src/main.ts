@@ -17,34 +17,44 @@ async function getWordBank(): Promise<string[]> {
   return wordBankCache;
 }
 
-// ── Dictionary (fetched lazily on first badge click) ─────────────────────────
-let dictionaryCache: Record<string, string> | null = null;
-let dictionaryLoading: Promise<Record<string, string>> | null = null;
+// ── Dictionary (chunked by first letter, loaded lazily) ───────────────────────
+const dictChunkCache: Record<string, Record<string, string>> = {};
+const dictChunkLoading: Record<string, Promise<Record<string, string>>> = {};
 
-async function getDictionary(): Promise<Record<string, string>> {
-  if (dictionaryCache) return dictionaryCache;
-  if (dictionaryLoading) return dictionaryLoading;
-  dictionaryLoading = fetch('/dictionary.json')
-    .then(res => {
-      if (!res.ok) throw new Error(`Failed to load dictionary: ${res.status}`);
-      return res.json() as Promise<Record<string, string>>;
-    })
-    .then(dict => {
-      dictionaryCache = dict;
-      dictionaryLoading = null;
-      return dict;
-    })
-    .catch(err => {
-      dictionaryLoading = null; // allow retry
-      throw err;
-    });
-  return dictionaryLoading;
+async function getDictChunk(letter: string): Promise<Record<string, string>> {
+  const l = letter.toLowerCase();
+  if (dictChunkCache[l]) return dictChunkCache[l];
+  if (!dictChunkLoading[l]) {
+    dictChunkLoading[l] = fetch(`/dictionary/${l}.json`)
+      .then(res => {
+        if (!res.ok) throw new Error(`Dict chunk '${l}' failed: ${res.status}`);
+        return res.json() as Promise<Record<string, string>>;
+      })
+      .then(chunk => {
+        dictChunkCache[l] = chunk;
+        delete dictChunkLoading[l];
+        return chunk;
+      })
+      .catch(err => {
+        delete dictChunkLoading[l];
+        throw err;
+      });
+  }
+  return dictChunkLoading[l];
 }
 
-// Kick off a background prefetch of the dictionary after the game is ready,
-// so it is likely already cached when the player first clicks a badge.
-function prefetchDictionary(): void {
-  getDictionary().catch(() => { /* silent — will retry on badge click */ });
+async function getDefinition(word: string): Promise<string | null> {
+  const lower = word.toLowerCase();
+  const chunk = await getDictChunk(lower[0]);
+  return chunk[lower] ?? null;
+}
+
+// Prefetch the chunks for letters present in the current game board.
+function prefetchDictChunks(words: string[]): void {
+  const letters = new Set(words.map(w => w[0].toLowerCase()));
+  for (const letter of letters) {
+    getDictChunk(letter).catch(() => { /* silent — will retry on click */ });
+  }
 }
 
 // ── Game state ────────────────────────────────────────────────────────────────
@@ -66,18 +76,15 @@ function update(next: GameState): void {
 }
 
 async function handleWordClick(word: string): Promise<void> {
-  // Show modal immediately with a loading spinner
-  showDefinitionModal(word, null);
+  showDefinitionModal(word, null); // show spinner immediately
 
   try {
-    const dict = await getDictionary();
-    // Dictionary keys may be lowercase or original case — try both
-    const def = dict[word.toLowerCase()] ?? dict[word] ?? null;
+    const def = await getDefinition(word);
     showDefinitionModal(word, def ?? '(No definition found)');
   } catch {
     showDefinitionModal(
       word,
-      '⚠️ Could not load dictionary.\nMake sure dictionary.json is placed in the public/ folder.'
+      '⚠️ Could not load dictionary.\nMake sure the /dictionary/ folder is in public/.'
     );
   }
 }
@@ -96,7 +103,7 @@ async function startNewGame(): Promise<void> {
       generateGameAsync(wordBank, (attempt, max, done) => {
         updateLoadingProgress(attempt, max, done);
       }).then(s => { nextState = s; }).catch(() => { failed = true; }),
-      new Promise<void>(resolve => setTimeout(resolve, 2000)), // 2 s minimum
+      new Promise<void>(resolve => setTimeout(resolve, 2000)),
     ]);
   } catch {
     failed = true;
@@ -106,7 +113,10 @@ async function startNewGame(): Promise<void> {
     renderError(() => startNewGame());
   } else {
     update(nextState!);
-    prefetchDictionary(); // start loading dictionary in the background
+    // Prefetch only the letter chunks needed for this game's words
+    if (nextState.words) {
+      prefetchDictChunks(nextState.words.map(w => w.text ?? w));
+    }
   }
 }
 
