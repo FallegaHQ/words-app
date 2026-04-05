@@ -1,16 +1,18 @@
-export const GRID_SIZE        = 11;
-export const TARGET_WORDS     = 20;
-export const HAND_SIZE        = 16;
-export const BONUS_SIZE       = 3;
-export const WILD_COUNT       = 3;
 export const MAX_GEN_ATTEMPTS = 150;
 export const ALPHABET         = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
-/**
- * Difficulty presets — passed explicitly to generation functions.
- * 0 = perfectly fair (pure random)
- * 1 = fully rigged (worst possible letters, hardest possible words)
- */
+// ── Grid configurations ───────────────────────────────────────────────────────
+
+export const GRID_CONFIGS = {
+  small:  { size:  7, targetWords: 10, handSize: 10, bonusSize: 2, wildCount: 2, minWordLen: 3, maxWordLen: 5 },
+  normal: { size: 11, targetWords: 20, handSize: 14, bonusSize: 2, wildCount: 3, minWordLen: 4, maxWordLen: 6 },
+  large:  { size: 15, targetWords: 30, handSize: 16, bonusSize: 3, wildCount: 4, minWordLen: 4, maxWordLen: 8 },
+} as const;
+
+export type GridSizeKey = keyof typeof GRID_CONFIGS;
+
+// ── Difficulty presets ────────────────────────────────────────────────────────
+
 export const DIFFICULTY_PRESETS = {
   easy:   0.2,
   medium: 0.55,

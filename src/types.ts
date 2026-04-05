@@ -1,10 +1,12 @@
-// ── Domain Types ─────────────────────────────────────────────────────────────
+import type { GridSizeKey, DifficultyKey } from './constants';
+
+// ── Domain Types ──────────────────────────────────────────────────────────────
 
 export interface Cell {
   letter:    string;
   wordIds:   number[];
   isWild:    boolean;
-  scratched: boolean; // player has scratched this cell on the grid
+  scratched: boolean;
 }
 
 export interface Word {
@@ -17,20 +19,33 @@ export interface Word {
 
 export interface Tile {
   letter:   string;
-  revealed: boolean; // player has scratched this hand/bonus tile
+  revealed: boolean;
+}
+
+// ── Config & Scoring ──────────────────────────────────────────────────────────
+
+export interface GameConfig {
+  difficulty:    number;
+  difficultyKey: DifficultyKey;
+  gridSizeKey:   GridSizeKey;
 }
 
 export interface HighScore {
-  words: number;
-  date:  string; // ISO timestamp
+  words:         number;
+  total:         number;   // max words for this config
+  date:          string;   // ISO timestamp
+  difficultyKey: DifficultyKey;
+  gridSizeKey:   GridSizeKey;
 }
+
+// ── Game State ────────────────────────────────────────────────────────────────
 
 export interface GameState {
   grid:                Cell[][];
   words:               Word[];
-  hand:                Tile[];   // unique random letters
-  bonus:               Tile[];   // bonus letters, scratchable any time
+  hand:                Tile[];
+  bonus:               Tile[];
   revealedLetters:     Set<string>;
-  animatedCells:       Set<string>;  // cells that just got scratched (pop animation)
-  newlyAvailableCells: Set<string>;  // cells that just became scratchable (discover animation)
+  animatedCells:       Set<string>;
+  newlyAvailableCells: Set<string>;
 }
