@@ -222,7 +222,7 @@ function buildCombinedHandHTML(state: GameState): string {
 
   return `
   <div class="hand-panel" id="hand-panel">
-    <div class="section-label">YOUR TILES <span class="sub-hint">(scratch to reveal · 🎁 bonus anytime)</span></div>
+    <div class="section-label">YOUR TILES</div>
     <div class="tile-grid" style="grid-template-columns:repeat(${perRow},1fr)">${handTiles}${bonusTiles}</div>
   </div>`;
 }
