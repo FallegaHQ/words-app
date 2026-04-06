@@ -1096,3 +1096,94 @@ body {
 }
 .sum-letters-useful { background: #c8e6c9; color: #1b5e20; }
 .sum-letters-extra  { background: #ffccbc; color: #bf360c; }
+
+/* ── High Scores: time + seed columns ──────────────────────────────────────── */
+.hs-dur  { font-size: 12px; font-weight: 800; color: #1565c0; white-space: nowrap; }
+.hs-seed { font-size: 11px; white-space: nowrap; }
+.hs-seed-text {
+  display: inline-block; max-width: 90px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+  font-family: monospace; font-size: 10px; font-weight: 700;
+  color: #5d4037; vertical-align: middle;
+}
+.hs-seed-na { color: #bbb; }
+.hs-seed-copy {
+  border: none; background: none; cursor: pointer;
+  font-size: 13px; padding: 0 2px; vertical-align: middle;
+  opacity: .7; transition: opacity .1s;
+}
+.hs-seed-copy:hover { opacity: 1; }
+/* Shrink table slightly for extra columns */
+.hs-modal { max-width: 520px; }
+.hs-table { font-size: 12px; }
+.hs-table th { font-size: 10px; padding: 5px 7px; }
+.hs-table td { padding: 5px 7px; }
+
+/* ── Game Over modal (non-dismissable interstitial) ─────────────────────────── */
+.game-over-modal { max-width: 360px; text-align: center; }
+.game-over-body  { padding: 20px 24px 24px !important; }
+.game-over-msg {
+  font-size: 15px; font-weight: 800; color: #4a2800;
+  line-height: 1.55; margin-bottom: 20px;
+}
+.game-over-cta { font-size: 17px; padding: 13px 28px; width: 100%; }
+
+/* ── History modal ──────────────────────────────────────────────────────────── */
+.hist-modal  { max-width: 480px; }
+.hist-body   {
+  flex-direction: column; display: flex !important;
+  padding: 0 !important; gap: 0;
+  max-height: 76vh; overflow: hidden;
+}
+.hist-count {
+  font-size: 10px; font-weight: 900; color: #8d6e63; letter-spacing: .5px;
+  text-align: center; padding: 6px 0 4px;
+  border-bottom: 1px solid rgba(0,0,0,.07);
+}
+.hist-list {
+  flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  padding: 4px 0;
+}
+.hist-empty {
+  text-align: center; padding: 28px 16px;
+  font-size: 14px; font-weight: 800; color: #8d6e63;
+}
+.hist-row {
+  padding: 8px 12px; border-bottom: 1px solid rgba(0,0,0,.07);
+}
+.hist-row:last-child { border-bottom: none; }
+.hist-row-top {
+  display: flex; align-items: center; gap: 6px;
+  margin-bottom: 4px;
+}
+.hist-row-bottom {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 4px;
+}
+.hist-date {
+  font-size: 11px; font-weight: 800; color: #5d4037;
+  flex-shrink: 0;
+}
+.hist-time { font-size: 10px; color: #8d6e63; }
+.hist-cfg {
+  font-size: 11px; font-weight: 700; color: #9b1313;
+  background: rgba(155,19,19,.08); border-radius: 5px; padding: 1px 6px;
+}
+.hist-stars { font-size: 12px; color: #c95f00; letter-spacing: 1px; margin-left: auto; }
+.hist-score {
+  font-size: 11px; font-weight: 700; color: #3e2723;
+}
+.hist-seed-wrap {
+  display: flex; align-items: center; gap: 3px; flex-shrink: 0;
+}
+.hist-seed-text {
+  display: inline-block; max-width: 80px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+  font-family: monospace; font-size: 10px; font-weight: 700; color: #5d4037;
+}
+.hist-btn {
+  border: none; background: none; cursor: pointer;
+  font-size: 14px; padding: 1px 4px;
+  opacity: .75; transition: opacity .1s; border-radius: 4px;
+}
+.hist-btn:hover { opacity: 1; background: rgba(0,0,0,.07); }

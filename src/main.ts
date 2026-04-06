@@ -12,7 +12,8 @@ import {
   generateRandomSeedString,
 } from './core/gameLogic';
 import { getWordBank, getDefinition, prefetchDictChunks } from './core/wordBank';
-import { saveScore, getAllScores, getUnlockedIds } from './core/storage';
+import { saveScore, getAllScores, getUnlockedIds, saveGameHistory, getGameHistory } from './core/storage';
+import { computeScore } from './core/gameLogic';
 import { checkAchievements } from './core/achievementCheck';
 
 // UI
@@ -37,6 +38,8 @@ import { showAchievementsModal } from './ui/modals/achievements';
 import { showAchievementToast } from './ui/modals/toast';
 import { showHowToPlayModal } from './ui/modals/howToPlay';
 import { createOverlay, openModal, closeModalById } from './ui/modals/base';
+import { showGameOverModal } from './ui/modals/gameOver';
+import { showHistoryModal } from './ui/modals/history';
 
 import { DIFFICULTY_PRESETS, DRAFT_COUNTS, ALPHABET, GRID_CONFIGS } from './constants';
 import type { GameState, GameConfig, RenderCallbacks, Word, GameViewContext } from './types';
@@ -92,7 +95,29 @@ function resetSession(): void {
 
 function finaliseSession(): void {
   timerEnd ??= Date.now();
-  if (state) saveScore(state, currentConfig);
+  if (state) {
+    const elapsed = getElapsedMs();
+    saveScore(state, currentConfig, elapsed);
+    saveGameHistory({
+      date:          new Date().toISOString(),
+      seed:          currentConfig.seed,
+      seedMode:      currentConfig.seedMode,
+      difficultyKey: currentConfig.difficultyKey,
+      gridSizeKey:   currentConfig.gridSizeKey,
+      words:         state.words.filter(w => w.complete).length,
+      total:         GRID_CONFIGS[currentConfig.gridSizeKey].targetWords,
+      score:         computeScore(state),
+      elapsedMs:     elapsed,
+    });
+  }
+}
+
+/** True when the player has no more moves: all hand+bonus tiles revealed,
+ *  and the lucky draw has either been used or was never available. */
+function isHandExhausted(s: GameState): boolean {
+  if (!s.hand.every(t => t.revealed) || !s.bonus.every(t => t.revealed)) return false;
+  if (s.luckyDrawPool.length > 0 && !s.luckyDrawUsed) return false; // lucky draw still pending
+  return true;
 }
 
 function sfxAuto(type: 'tick' | 'scratch'): void {
@@ -111,8 +136,8 @@ function runAchievementSweep(): void {
   const newly = checkAchievements(state, currentConfig, getElapsedMs());
   newly.forEach(ach => showAchievementToast(ach.icon, ach.title));
 
-  if (!summaryShown && state.words.length > 0 && state.words.every(w => w.complete)) {
-    timerEnd = Date.now();
+  if (!summaryShown && state.words.length > 0 && (state.words.every(w => w.complete) || isHandExhausted(state))) {
+    timerEnd ??= Date.now();
     void runEndGameCountdownAndSummary();
   }
 }
@@ -293,7 +318,9 @@ async function runEndGameCountdownAndSummary(): Promise<void> {
   gamePhase = 'play';
   state = revealFullGridFog(state);
   render(state, callbacks, currentConfig, buildViewCtx());
-  showAutoSummary();
+
+  // Non-dismissable interstitial — player must acknowledge before seeing summary
+  showGameOverModal(() => showAutoSummary());
 }
 
 function showAutoSummary(): void {
@@ -412,6 +439,20 @@ const callbacks: RenderCallbacks = {
               }, { dailyChallenge: true });
             },
             onHowToPlay: showHowToPlayModal,
+            onHistory: () => {
+              showHistoryModal(getGameHistory(), {
+                onReplay: entry => {
+                  currentConfig = {
+                    difficulty:    DIFFICULTY_PRESETS[entry.difficultyKey],
+                    difficultyKey: entry.difficultyKey,
+                    gridSizeKey:   entry.gridSizeKey,
+                    seed:          entry.seed,
+                    seedMode:      entry.seedMode,
+                  };
+                  startNewGame();
+                },
+              });
+            },
           });
         },
       });
@@ -505,4 +546,18 @@ renderHub({
     }, { dailyChallenge: true });
   },
   onHowToPlay: showHowToPlayModal,
+  onHistory: () => {
+    showHistoryModal(getGameHistory(), {
+      onReplay: entry => {
+        currentConfig = {
+          difficulty:    DIFFICULTY_PRESETS[entry.difficultyKey],
+          difficultyKey: entry.difficultyKey,
+          gridSizeKey:   entry.gridSizeKey,
+          seed:          entry.seed,
+          seedMode:      entry.seedMode,
+        };
+        startNewGame();
+      },
+    });
+  },
 });

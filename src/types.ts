@@ -44,6 +44,20 @@ export interface HighScore {
   date:          string;
   difficultyKey: DifficultyKey;
   gridSizeKey:   GridSizeKey;
+  elapsedMs?:    number;
+  seed?:         string;
+}
+
+export interface GameHistoryEntry {
+  date:          string;
+  seed:          string;
+  seedMode:      SeedMode;
+  difficultyKey: DifficultyKey;
+  gridSizeKey:   GridSizeKey;
+  words:         number;
+  total:         number;
+  score:         number;
+  elapsedMs:     number;
 }
 
 // ── Achievements ──────────────────────────────────────────────────────────────

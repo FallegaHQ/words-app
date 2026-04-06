@@ -1,6 +1,6 @@
 import { GRID_CONFIGS } from '../constants';
 import type { DifficultyKey, GridSizeKey } from '../constants';
-import type { GameState, GameConfig, HighScore, AchievementRecord } from '../types';
+import type { GameState, GameConfig, HighScore, AchievementRecord, GameHistoryEntry } from '../types';
 import { computeScore } from './gameLogic';
 
 // ── High Scores ───────────────────────────────────────────────────────────────
@@ -27,7 +27,7 @@ export function getAllScores(): Partial<Record<DifficultyKey, Partial<Record<Gri
   return result;
 }
 
-export function saveScore(state: GameState, config: GameConfig): void {
+export function saveScore(state: GameState, config: GameConfig, elapsedMs?: number): void {
   const wordsComplete = state.words.filter(w => w.complete).length;
   const score  = computeScore(state);
   const scores = getScoresFor(config.difficultyKey, config.gridSizeKey);
@@ -38,11 +38,33 @@ export function saveScore(state: GameState, config: GameConfig): void {
     date:          new Date().toISOString(),
     difficultyKey: config.difficultyKey,
     gridSizeKey:   config.gridSizeKey,
+    elapsedMs,
+    seed:          config.seed,
   });
   scores.sort((a, b) => b.score - a.score || b.words - a.words);
   try {
     localStorage.setItem(hsKey(config.difficultyKey, config.gridSizeKey), JSON.stringify(scores.slice(0, 100)));
   } catch { /* storage full */ }
+}
+
+// ── Game History ──────────────────────────────────────────────────────────────
+
+const HISTORY_KEY = 'luckyLetters_history';
+const MAX_HISTORY = 200;
+
+export function saveGameHistory(entry: GameHistoryEntry): void {
+  const history = getGameHistory();
+  history.unshift(entry);
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, MAX_HISTORY)));
+  } catch { /* storage full */ }
+}
+
+export function getGameHistory(): GameHistoryEntry[] {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    return raw ? (JSON.parse(raw) as GameHistoryEntry[]) : [];
+  } catch { return []; }
 }
 
 // ── Achievements ──────────────────────────────────────────────────────────────

@@ -2,7 +2,7 @@ import { createOverlay, closeModalById, onEscape } from './base';
 import { GRID_CONFIGS } from '../../constants';
 import type { DifficultyKey, GridSizeKey } from '../../constants';
 import type { GameConfig, HighScore } from '../../types';
-import { scoreToStars } from '../utils';
+import { scoreToStars, formatDuration } from '../utils';
 
 const ID = 'hs-modal-overlay';
 type ScoresMap = Partial<Record<DifficultyKey, Partial<Record<GridSizeKey, HighScore[]>>>>;
@@ -19,17 +19,24 @@ export function showHighScoreModal(scores: ScoresMap, currentConfig: GameConfig)
   function buildRows(d: DifficultyKey, s: GridSizeKey): string {
     const list = scores[d]?.[s] ?? [];
     const top  = [...list].sort((a, b) => b.words - a.words).slice(0, 10);
-    if (!top.length) return `<tr><td colspan="4" class="hs-empty">No scores yet</td></tr>`;
+    if (!top.length) return `<tr><td colspan="6" class="hs-empty">No scores yet</td></tr>`;
     return top.map((sc, i) => {
       const d2   = new Date(sc.date);
       const date = d2.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
       const time = d2.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
       const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`;
       const stars = scoreToStars(sc.words, sc.total);
+      const dur   = sc.elapsedMs ? formatDuration(sc.elapsedMs) : '—';
+      const seedCell = sc.seed
+        ? `<span class="hs-seed-text" title="${sc.seed}">${sc.seed.length > 14 ? sc.seed.slice(0, 12) + '…' : sc.seed}</span>
+           <button class="hs-seed-copy" data-seed="${sc.seed}" title="Copy seed">📋</button>`
+        : `<span class="hs-seed-text hs-seed-na">—</span>`;
       return `<tr class="${i === 0 ? 'hs-top' : ''}">
         <td class="hs-rank">${medal}</td>
         <td class="hs-score">${sc.words}<span class="hs-total"> / ${sc.total}</span></td>
         <td class="hs-stars">${stars}</td>
+        <td class="hs-dur">${dur}</td>
+        <td class="hs-seed">${seedCell}</td>
         <td class="hs-date">${date}<br><span class="hs-time">${time}</span></td>
       </tr>`;
     }).join('');
@@ -57,7 +64,7 @@ export function showHighScoreModal(scores: ScoresMap, currentConfig: GameConfig)
           </div>
           <div class="hs-context">${diffLabels[selDiff]} · ${cfg.size}×${cfg.size} · ${cfg.targetWords} words</div>
           <table class="hs-table">
-            <thead><tr><th>#</th><th>Score</th><th>Stars</th><th>Date</th></tr></thead>
+            <thead><tr><th>#</th><th>Score</th><th>Stars</th><th>Time</th><th>Seed</th><th>Date</th></tr></thead>
             <tbody>${buildRows(selDiff, selSize)}</tbody>
           </table>
         </div>
@@ -68,6 +75,15 @@ export function showHighScoreModal(scores: ScoresMap, currentConfig: GameConfig)
     });
     overlay.querySelectorAll<HTMLElement>('[data-size]').forEach(el => {
       el.addEventListener('click', () => { selSize = el.dataset.size as GridSizeKey; render(); });
+    });
+    overlay.querySelectorAll<HTMLElement>('.hs-seed-copy').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const seed = btn.dataset.seed;
+        if (!seed) return;
+        void navigator.clipboard?.writeText(seed).catch(() => {});
+        btn.textContent = '✅';
+        setTimeout(() => { btn.textContent = '📋'; }, 1200);
+      });
     });
     overlay.querySelector('.def-modal-close')!.addEventListener('click', hideHighScoreModal);
     overlay.addEventListener('click', e => { if (e.target === overlay) hideHighScoreModal(); });
