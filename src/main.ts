@@ -18,6 +18,7 @@ import { showSummaryModal, hideSummaryModal }           from './ui/modals/summar
 import { showAchievementsModal }                        from './ui/modals/achievements';
 import { showAchievementToast }                        from './ui/modals/toast';
 import { showHowToPlayModal }                          from './ui/modals/howToPlay';
+import { createOverlay, openModal, closeModalById }    from './ui/modals/base';
 
 // Types
 import { DIFFICULTY_PRESETS } from './constants';
@@ -116,6 +117,50 @@ const callbacks: RenderCallbacks = {
     });
   },
 
+  onReturnToHub: () => {
+    const CONFIRM_ID = 'hub-confirm-overlay';
+    const overlay = createOverlay(CONFIRM_ID, `
+      <div class="def-modal confirm-modal" role="dialog" aria-modal="true">
+        <div class="def-modal-body">
+          <div class="confirm-icon">🏠</div>
+          <div class="confirm-title">Return to Hub?</div>
+          <div class="confirm-msg">Your current game progress will be saved to your score history.</div>
+          <div class="confirm-actions">
+            <button class="btn btn-secondary" id="confirm-cancel">Cancel</button>
+            <button class="btn btn-primary"   id="confirm-ok">Return to Hub</button>
+          </div>
+        </div>
+      </div>`);
+
+    overlay.querySelector('#confirm-cancel')!.addEventListener('click', () => closeModalById(CONFIRM_ID));
+    overlay.querySelector('#confirm-ok')!.addEventListener('click', () => {
+      closeModalById(CONFIRM_ID);
+      if (!summaryShown) {
+        summaryShown = true;
+        finaliseSession();
+      }
+      showSummaryModal(state!, currentConfig, getElapsedMs(), {
+        onGoToHub: () => {
+          hideSummaryModal();
+          resetSession();
+          resetRenderer();
+          renderHub({
+            onNewGame: () => {
+              showNewTicketModal(currentConfig, newConfig => {
+                hideNewTicketModal();
+                currentConfig = newConfig;
+                startNewGame();
+              });
+            },
+            onHowToPlay: showHowToPlayModal,
+          });
+        },
+      });
+    });
+    overlay.addEventListener('click', e => { if (e.target === overlay) closeModalById(CONFIRM_ID); });
+    openModal(overlay);
+  },
+
   onWordClick:        (word, onClosed) => handleWordClick(word, onClosed),
   onShowHighScores:   ()               => showHighScoreModal(getAllScores(), currentConfig),
   onShowAchievements: ()               => showAchievementsModal(getUnlockedIds()),
@@ -128,9 +173,7 @@ function update(next: GameState): void {
   render(state, callbacks, currentConfig);
 
   const newly = checkAchievements(state, currentConfig, getElapsedMs());
-  newly.forEach((ach, i) => {
-    setTimeout(() => showAchievementToast(ach.icon, ach.title), i * 1200);
-  });
+  newly.forEach(ach => showAchievementToast(ach.icon, ach.title));
 
   if (!summaryShown && state.words.length > 0 && state.words.every(w => w.complete)) {
     timerEnd = Date.now();

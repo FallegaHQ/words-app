@@ -10,6 +10,7 @@ export interface SummaryCallbacks {
   onPlayAgain?:      () => void;
   onChangeSettings?: () => void;
   onStart?:          () => void;
+  onGoToHub?:        () => void;
 }
 
 export function showSummaryModal(
@@ -51,7 +52,10 @@ export function showSummaryModal(
     : '';
 
   const isSingleMode = !!cb.onStart;
-  const actionsHTML  = isSingleMode
+  const isHubMode    = !!cb.onGoToHub;
+  const actionsHTML  = isHubMode
+    ? `<button class="btn btn-primary sum-btn-hub">🏠 Return to Hub</button>`
+    : isSingleMode
     ? `<button class="btn btn-primary sum-btn-start">🎰 Let's Play!</button>`
     : `<button class="btn btn-secondary sum-btn-settings">⚙️ Change Settings</button>
        <button class="btn btn-primary sum-btn-again">🎰 Play Again</button>`;
@@ -60,7 +64,7 @@ export function showSummaryModal(
     <div class="def-modal sum-modal" role="dialog" aria-modal="true">
       <div class="def-modal-header">
         <span class="def-modal-word">${allDone ? '🎉 Ticket Complete!' : doneWords.length > 0 ? '🎰 Game Summary' : '🎰 No Words Found'}</span>
-        ${isSingleMode ? '' : '<button class="def-modal-close" aria-label="Close">✕</button>'}
+        ${(isSingleMode || isHubMode) ? '' : '<button class="def-modal-close" aria-label="Close">✕</button>'}
       </div>
       <div class="def-modal-body sum-body">
         <div class="sum-hero">
@@ -86,7 +90,9 @@ export function showSummaryModal(
       </div>
     </div>`);
 
-  if (isSingleMode) {
+  if (isHubMode) {
+    overlay.querySelector('.sum-btn-hub')!.addEventListener('click', cb.onGoToHub!);
+  } else if (isSingleMode) {
     const start = cb.onStart!;
     overlay.querySelector('.sum-btn-start')!.addEventListener('click', start);
     overlay.addEventListener('click', e => { if (e.target === overlay) start(); });

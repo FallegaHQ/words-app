@@ -222,7 +222,7 @@ function buildCombinedHandHTML(state: GameState): string {
 
   return `
   <div class="hand-panel" id="hand-panel">
-    <div class="section-label">YOUR TILES</div>
+    <div class="section-label">YOUR TILES <span class="sub-hint">(scratch to reveal · 🎁 bonus anytime)</span></div>
     <div class="tile-grid" style="grid-template-columns:repeat(${perRow},1fr)">${handTiles}${bonusTiles}</div>
   </div>`;
 }
@@ -284,6 +284,7 @@ function buildInitialHTML(state: GameState, config: GameConfig): string {
     </div>
     <div class="score-bar">${scoreBarHTML(done, total, score)}</div>
     <div class="btn-row">
+      <button id="btn-hub" class="btn btn-hub">🏠 Hub</button>
       <button id="btn-new-game" class="btn btn-primary">🎰 New Ticket</button>
     </div>
   </div>`;
@@ -338,6 +339,7 @@ function captureAndBindRefs(
   if (countBadge) countBadge.textContent = `${state.words.filter(w => w.complete).length}/${totalWords}`;
 
   root.querySelector('#btn-new-game')!.addEventListener('click', cb.onNewGame);
+  root.querySelector('#btn-hub')!      .addEventListener('click', cb.onReturnToHub);
   root.querySelector('#btn-hs')!      .addEventListener('click', cb.onShowHighScores);
   root.querySelector('#btn-ach')!     .addEventListener('click', cb.onShowAchievements);
 

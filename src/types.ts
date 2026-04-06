@@ -77,6 +77,7 @@ export interface RenderCallbacks {
   onScratchCell:      (r: number, c: number) => void;
   onLuckyDrawPick:    (letter: string) => void;
   onNewGame:          () => void;
+  onReturnToHub:      () => void;
   onWordClick:        (word: string, onDefinitionClosed: () => void) => void;
   onShowHighScores:   () => void;
   onShowAchievements: () => void;

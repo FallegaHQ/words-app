@@ -7,7 +7,7 @@ body {
   background: linear-gradient(135deg, #064e8c 0%, #1070b8 45%, #0b7a6a 100%);
   display: flex;
   justify-content: center;
-  align-items: flex-start;
+  align-items: center;
   padding: 16px;
   font-family: 'Nunito', sans-serif;
 }
@@ -232,7 +232,7 @@ body {
   border-radius: 12px; padding: 7px 9px;
 }
 .section-label {
-  font-family: 'Fredoka One', cursive; font-size: 11px; color: #9b1313;
+  font-family: 'Fredoka One', cursive; font-size: 9px; color: #9b1313;
   text-align: center; margin-bottom: 5px;
 }
 .sub-hint {
@@ -288,10 +288,10 @@ body {
 .tile.revealed.scratched-look {
   background: repeating-linear-gradient(
     45deg,
-    #c8e6c9 0px, #c8e6c9 3px,
-    #b5dab5 3px, #b5dab5 6px
+    #ffe0b2 0px, #ffe0b2 3px,
+    #ffcc80 3px, #ffcc80 6px
   );
-  border-color: #388e3c; color: #1b5e20; cursor: default;
+  border-color: #e65100; color: #bf360c; cursor: default;
   box-shadow: inset 0 1px 3px rgba(0,0,0,.15);
 }
 .tile.revealed.scratched-look.useful {
@@ -300,8 +300,8 @@ body {
     #a5d6a7 0px, #a5d6a7 3px,
     #81c784 3px, #81c784 6px
   );
-  border-color: #2e7d32;
-  box-shadow: 0 0 0 2px rgba(46,125,50,.4), inset 0 1px 3px rgba(0,0,0,.1);
+  border: 3px solid #2e7d32; color: #1b5e20;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,.1);
 }
 .tile.bonus-tile.revealed.scratched-look {
   border-color: #e65100;
@@ -318,7 +318,7 @@ body {
     #a5d6a7 0px, #a5d6a7 3px,
     #81c784 3px, #81c784 6px
   );
-  border-color: #2e7d32; color: #1b5e20;
+  border: 3px solid #2e7d32; color: #1b5e20;
 }
 
 /* ── Lucky draw tile ────────────────────────────────────────────────────────── */
@@ -351,6 +351,28 @@ body {
 
 /* ── Buttons ────────────────────────────────────────────────────────────────── */
 .btn-row { display: flex; gap: 6px; margin-top: 8px; }
+.btn-row .btn { flex: 1; }
+.btn-hub { background: rgba(255,255,255,.28); color: #3e2723; border: 2px solid rgba(255,255,255,.45); }
+.btn-hub:hover { background: rgba(255,255,255,.45); }
+
+/* ── Confirm modal ───────────────────────────────────────────────────────────── */
+.confirm-modal {
+  max-width: 340px;
+  text-align: center;
+}
+.confirm-modal .def-modal-body {
+  padding: 20px 24px 24px;
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
+}
+.confirm-icon { font-size: 40px; }
+.confirm-title {
+  font-family: 'Fredoka One', cursive; font-size: 18px; color: #9b1313;
+}
+.confirm-msg {
+  font-size: 13px; font-weight: 700; color: #6d3a1a; line-height: 1.5;
+}
+.confirm-actions { display: flex; gap: 8px; width: 100%; margin-top: 4px; }
+.confirm-actions .btn { flex: 1; }
 .btn {
   flex: 1; padding: 8px 6px;
   border: none; border-radius: 10px;
@@ -659,7 +681,7 @@ body {
   display: flex; align-items: center; gap: 10px;
   box-shadow: 0 6px 24px rgba(0,0,0,.35);
   z-index: 2000; opacity: 0;
-  transition: transform .35s cubic-bezier(.34,1.56,.64,1), opacity .35s ease;
+  transition: transform .4s cubic-bezier(.34,1.56,.64,1), opacity .4s ease;
   min-width: 220px; max-width: 320px;
   pointer-events: none;
 }
@@ -805,7 +827,9 @@ body {
 .htp-modal {
   max-width: 480px;
   max-height: 85vh;
-  overflow: hidden
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 /* Header action area (lang toggle + close) */
@@ -833,18 +857,17 @@ body {
 /* Body */
 .htp-body {
   padding: 16px 20px 20px;
-  height: 100%;
-  position: relative;
-  height:100%; 
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  display: flex
 }
 
 /* Step rows */
 .htp-steps { 
     display: flex; 
     flex-direction: column; 
-    gap: 4px; 
+    gap: 4px;
+    width: 100%;
 }
 
 .htp-step {
