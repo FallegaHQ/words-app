@@ -1017,7 +1017,7 @@ body {
 
 /* ── End-game countdown overlay ──────────────────────────────────────────────── */
 .countdown-overlay {
-  position: absolute; inset: 0; z-index: 25;
+  position: absolute; inset: 0; z-index: 250;
   background: rgba(0,0,0,.48); border-radius: 17px;
   display: flex; align-items: center; justify-content: center;
   pointer-events: none;

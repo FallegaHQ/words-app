@@ -383,7 +383,7 @@ function buildInitialHTML(state: GameState, config: GameConfig, viewCtx: GameVie
   const done  = state.words.filter(w => w.complete).length;
   const score = computeScore(state);
   const cd    = viewCtx.showCountdown != null
-    ? `<div class="countdown-overlay" id="countdown-overlay" role="status" aria-live="assertive"><div class="countdown-inner">Revealing full board in ${viewCtx.showCountdown}…</div></div>`
+    ? `<div class="countdown-overlay" id="countdown-overlay" role="status" aria-live="assertive"><div class="countdown-inner">Starting new game in ${viewCtx.showCountdown}…</div></div>`
     : '';
 
   const ticketCls = [
@@ -678,7 +678,7 @@ function applyStateToRefs(
       refs.ticketEl.appendChild(refs.countdownOverlay);
     }
     refs.countdownOverlay.innerHTML =
-      `<div class="countdown-inner">Revealing full board in ${viewCtx.showCountdown}…</div>`;
+      `<div class="countdown-inner">Starting new game in ${viewCtx.showCountdown}…</div>`;
     refs.countdownOverlay.classList.remove('hidden');
     refs.countdownOverlay.setAttribute('aria-hidden', 'false');
   } else if (refs.countdownOverlay) {

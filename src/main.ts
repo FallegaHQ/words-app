@@ -38,7 +38,6 @@ import { showAchievementsModal } from './ui/modals/achievements';
 import { showAchievementToast } from './ui/modals/toast';
 import { showHowToPlayModal } from './ui/modals/howToPlay';
 import { createOverlay, openModal, closeModalById } from './ui/modals/base';
-import { showGameOverModal } from './ui/modals/gameOver';
 import { showHistoryModal } from './ui/modals/history';
 
 import { DIFFICULTY_PRESETS, DRAFT_COUNTS, ALPHABET, GRID_CONFIGS } from './constants';
@@ -136,7 +135,7 @@ function runAchievementSweep(): void {
   const newly = checkAchievements(state, currentConfig, getElapsedMs());
   newly.forEach(ach => showAchievementToast(ach.icon, ach.title));
 
-  if (!summaryShown && state.words.length > 0 && (state.words.every(w => w.complete) || isHandExhausted(state))) {
+  if (!summaryShown && gamePhase !== 'wild_autoscratch' && gamePhase !== 'draft' && gamePhase !== 'dealing' && state.words.length > 0 && (state.words.every(w => w.complete) || isHandExhausted(state))) {
     timerEnd ??= Date.now();
     void runEndGameCountdownAndSummary();
   }
@@ -156,7 +155,7 @@ function buildViewCtx(): GameViewContext {
     v.showWordsButton      = true;
     v.handPanelMessageOnly = null;
     v.handStatusMessage    =
-      '🎉 All words complete! The full board unlocks after the countdown — you can still use Hub / New Ticket above.';
+      '🎉 All tiles used! The fog of war has been eradicated! You can now see everything, for 5 seconds!';
     v.lockHandTileClicks   = true;
     v.interactionLocked    = true;
     return v;
@@ -307,7 +306,15 @@ async function runEndGameCountdownAndSummary(): Promise<void> {
   finaliseSession();
   playSFX('game_complete');
 
+  // Step 1: Reveal the full board immediately so the player can see it
+  state = revealFullGridFog(state);
   gamePhase = 'end_countdown';
+  render(state, callbacks, currentConfig, buildViewCtx());
+
+  // Step 2: Hold the revealed board for 5 seconds before the countdown
+  await new Promise<void>(r => setTimeout(r, 5000));
+
+  // Step 3: Countdown
   for (let t = 5; t >= 1; t--) {
     endGameCountdown = t;
     if (state) render(state, callbacks, currentConfig, buildViewCtx());
@@ -316,29 +323,70 @@ async function runEndGameCountdownAndSummary(): Promise<void> {
 
   endGameCountdown = null;
   gamePhase = 'play';
-  state = revealFullGridFog(state);
   render(state, callbacks, currentConfig, buildViewCtx());
 
-  // Non-dismissable interstitial — player must acknowledge before seeing summary
-  showGameOverModal(() => showAutoSummary());
+  // Step 4: Non-dismissable summary with New Game + Back to Hub
+  showAutoSummary();
 }
 
-function showAutoSummary(): void {
-  if (!state) return;
-  showSummaryModal(state, currentConfig, getElapsedMs(), {
-    onPlayAgain: () => {
-      hideSummaryModal();
-      startNewGame();
-    },
-    onChangeSettings: () => {
-      hideSummaryModal();
+function goToHub(): void {
+  resetSession();
+  resetRenderer();
+  renderHub({
+    onNewGame: () => {
       showNewTicketModal(currentConfig, newConfig => {
         hideNewTicketModal();
         currentConfig = newConfig;
         startNewGame();
       });
     },
+    onDailyChallenge: () => {
+      showNewTicketModal(currentConfig, newConfig => {
+        hideNewTicketModal();
+        currentConfig = newConfig;
+        startNewGame();
+      }, { dailyChallenge: true });
+    },
+    onHowToPlay: showHowToPlayModal,
+    onHistory: () => {
+      showHistoryModal(getGameHistory(), {
+        onReplay: entry => {
+          currentConfig = {
+            difficulty:    DIFFICULTY_PRESETS[entry.difficultyKey],
+            difficultyKey: entry.difficultyKey,
+            gridSizeKey:   entry.gridSizeKey,
+            seed:          entry.seed,
+            seedMode:      entry.seedMode,
+          };
+          startNewGame();
+        },
+      });
+    },
   });
+}
+
+function showAutoSummary(): void {
+  if (!state) return;
+  showSummaryModal(state, currentConfig, getElapsedMs(), {
+    onNewGame: () => {
+      hideSummaryModal();
+      showNewTicketModal(currentConfig, newConfig => {
+        hideNewTicketModal();
+        currentConfig = newConfig;
+        startNewGame();
+      }, {
+        nonDismissable: true,
+        onGoToHub: () => {
+          hideNewTicketModal();
+          goToHub();
+        },
+      });
+    },
+    onGoToHub: () => {
+      hideSummaryModal();
+      goToHub();
+    },
+  }, { nonDismissable: true });
 }
 
 // ── Render callbacks ──────────────────────────────────────────────────────────
@@ -421,39 +469,7 @@ const callbacks: RenderCallbacks = {
       showSummaryModal(state!, currentConfig, getElapsedMs(), {
         onGoToHub: () => {
           hideSummaryModal();
-          resetSession();
-          resetRenderer();
-          renderHub({
-            onNewGame: () => {
-              showNewTicketModal(currentConfig, newConfig => {
-                hideNewTicketModal();
-                currentConfig = newConfig;
-                startNewGame();
-              });
-            },
-            onDailyChallenge: () => {
-              showNewTicketModal(currentConfig, newConfig => {
-                hideNewTicketModal();
-                currentConfig = newConfig;
-                startNewGame();
-              }, { dailyChallenge: true });
-            },
-            onHowToPlay: showHowToPlayModal,
-            onHistory: () => {
-              showHistoryModal(getGameHistory(), {
-                onReplay: entry => {
-                  currentConfig = {
-                    difficulty:    DIFFICULTY_PRESETS[entry.difficultyKey],
-                    difficultyKey: entry.difficultyKey,
-                    gridSizeKey:   entry.gridSizeKey,
-                    seed:          entry.seed,
-                    seedMode:      entry.seedMode,
-                  };
-                  startNewGame();
-                },
-              });
-            },
-          });
+          goToHub();
         },
       });
     });

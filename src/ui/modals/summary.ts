@@ -7,17 +7,22 @@ import { diffLabel, sizeLabel, scoreToStars, formatDuration } from '../utils';
 const ID = 'sum-modal-overlay';
 
 export interface SummaryCallbacks {
-  onPlayAgain?:      () => void;
-  onChangeSettings?: () => void;
-  onStart?:          () => void;
-  onGoToHub?:        () => void;
+  onPlayAgain?:    () => void;
+  onNewGame?:      () => void;
+  onStart?:        () => void;
+  onGoToHub?:      () => void;
+}
+
+export interface SummaryOptions {
+  nonDismissable?: boolean;
 }
 
 export function showSummaryModal(
   state:     GameState,
   config:    GameConfig,
   elapsedMs: number,
-  cb:        SummaryCallbacks
+  cb:        SummaryCallbacks,
+  opts:      SummaryOptions = {}
 ): void {
   const cfg        = GRID_CONFIGS[config.gridSizeKey];
   const doneWords  = state.words.filter(w => w.complete);
@@ -74,20 +79,26 @@ export function showSummaryModal(
          </div>`
       : '';
 
-  const isSingleMode = !!cb.onStart;
-  const isHubMode    = !!cb.onGoToHub;
-  const actionsHTML  = isHubMode
+  const { nonDismissable = false } = opts;
+  const isSingleMode  = !!cb.onStart;
+  const isHubMode     = !!cb.onGoToHub && !cb.onNewGame;
+  const isEndGameMode = !!cb.onNewGame && !!cb.onGoToHub;
+  const actionsHTML = isEndGameMode
+    ? `<button class="btn btn-primary sum-btn-again">🎰 New Game</button>
+       <button class="btn btn-secondary sum-btn-hub">🏠 Back to Hub</button>`
+    : isHubMode
     ? `<button class="btn btn-primary sum-btn-hub">🏠 Return to Hub</button>`
     : isSingleMode
     ? `<button class="btn btn-primary sum-btn-start">🎰 Let's Play!</button>`
-    : `<button class="btn btn-secondary sum-btn-settings">⚙️ Change Settings</button>
-       <button class="btn btn-primary sum-btn-again">🎰 Play Again</button>`;
+    : `<button class="btn btn-primary sum-btn-again">🎰 Play Again</button>`;
+
+  const showClose = !nonDismissable && !isSingleMode && !isHubMode && !isEndGameMode;
 
   const overlay = createOverlay(ID, `
     <div class="def-modal sum-modal" role="dialog" aria-modal="true">
       <div class="def-modal-header">
         <span class="def-modal-word">${allDone ? '🎉 Ticket Complete!' : doneWords.length > 0 ? '🎰 Game Summary' : '🎰 No Words Found'}</span>
-        ${(isSingleMode || isHubMode) ? '' : '<button class="def-modal-close" aria-label="Close">✕</button>'}
+        ${showClose ? '<button class="def-modal-close" aria-label="Close">✕</button>' : ''}
       </div>
       <div class="def-modal-body sum-body">
         <div class="sum-hero">
@@ -114,7 +125,10 @@ export function showSummaryModal(
       </div>
     </div>`);
 
-  if (isHubMode) {
+  if (isEndGameMode) {
+    overlay.querySelector('.sum-btn-again')!.addEventListener('click', cb.onNewGame!);
+    overlay.querySelector('.sum-btn-hub')!.addEventListener('click', cb.onGoToHub!);
+  } else if (isHubMode) {
     overlay.querySelector('.sum-btn-hub')!.addEventListener('click', cb.onGoToHub!);
   } else if (isSingleMode) {
     const start = cb.onStart!;
@@ -123,10 +137,11 @@ export function showSummaryModal(
     onEscape(() => start());
   } else {
     overlay.querySelector('.sum-btn-again')!.addEventListener('click', cb.onPlayAgain!);
-    overlay.querySelector('.sum-btn-settings')!.addEventListener('click', cb.onChangeSettings!);
-    overlay.querySelector('.def-modal-close')?.addEventListener('click', hideSummaryModal);
-    overlay.addEventListener('click', e => { if (e.target === overlay) hideSummaryModal(); });
-    onEscape(hideSummaryModal);
+    if (showClose) {
+      overlay.querySelector('.def-modal-close')?.addEventListener('click', hideSummaryModal);
+      overlay.addEventListener('click', e => { if (e.target === overlay) hideSummaryModal(); });
+      onEscape(hideSummaryModal);
+    }
   }
 
   openModal(overlay);

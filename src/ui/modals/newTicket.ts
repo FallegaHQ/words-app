@@ -9,6 +9,10 @@ const ID = 'nt-modal-overlay';
 export interface NewTicketOptions {
   /** Opens with daily seed + no seed display in-game */
   dailyChallenge?: boolean;
+  /** Removes close button/backdrop/Escape and adds a Back to Hub button */
+  nonDismissable?: boolean;
+  /** Called when the user taps Back to Hub (requires nonDismissable) */
+  onGoToHub?: () => void;
 }
 
 export function showNewTicketModal(
@@ -54,7 +58,7 @@ export function showNewTicketModal(
     <div class="def-modal nt-modal${options?.dailyChallenge ? ' nt-modal-daily' : ''}" role="dialog" aria-modal="true">
       <div class="def-modal-header">
         <span class="def-modal-word">${options?.dailyChallenge ? '📅 Daily Challenge' : '🎰 New Ticket'}</span>
-        <button type="button" class="def-modal-close" aria-label="Close">✕</button>
+        ${options?.nonDismissable ? '' : '<button type="button" class="def-modal-close" aria-label="Close">✕</button>'}
       </div>
       <div class="def-modal-body nt-body">
         ${dailyChallengeBanner}
@@ -81,6 +85,7 @@ export function showNewTicketModal(
           <div class="nt-seed-hint">Same seed + settings = same crossword. Share with friends!</div>
         </div>
         <button type="button" class="btn btn-primary nt-play-btn">🎰 Let's Play!</button>
+        ${options?.nonDismissable && options?.onGoToHub ? '<button type="button" class="btn btn-secondary nt-hub-btn">🏠 Back to Hub</button>' : ''}
       </div>
     </div>`);
 
@@ -169,7 +174,16 @@ export function showNewTicketModal(
     });
   });
 
-  bindClose(overlay, hideNewTicketModal);
+  if (options?.nonDismissable) {
+    if (options.onGoToHub) {
+      overlay.querySelector('.nt-hub-btn')?.addEventListener('click', () => {
+        closeModalById(ID);
+        options.onGoToHub!();
+      });
+    }
+  } else {
+    bindClose(overlay, hideNewTicketModal);
+  }
   openModal(overlay);
 }
 
