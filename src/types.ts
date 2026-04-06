@@ -33,11 +33,25 @@ export interface GameConfig {
 
 export interface HighScore {
   words:         number;
-  total:         number;   // max words for this config
-  score:         number;   // point score
-  date:          string;   // ISO timestamp
+  total:         number;
+  score:         number;
+  date:          string;
   difficultyKey: DifficultyKey;
   gridSizeKey:   GridSizeKey;
+}
+
+// ── Achievements ──────────────────────────────────────────────────────────────
+
+export interface AchievementDef {
+  id:          string;
+  title:       string;
+  description: string;
+  icon:        string;
+}
+
+export interface AchievementRecord {
+  unlocked:    boolean;
+  unlockedAt?: string;
 }
 
 // ── Game State ────────────────────────────────────────────────────────────────
@@ -50,4 +64,10 @@ export interface GameState {
   revealedLetters:     Set<string>;
   animatedCells:       Set<string>;
   newlyAvailableCells: Set<string>;
+  // Fog of War
+  fogRevealed:         Set<string>;   // "r,c" keys of cells visible through fog
+  // Lucky Draw
+  luckyDrawUsed:       boolean;
+  luckyDrawPool:       string[];      // letters available in lucky draw
+  initialHandLetters:  string[];      // for reference
 }

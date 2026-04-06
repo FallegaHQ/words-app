@@ -1,5 +1,5 @@
 import { GRID_CONFIGS, MAX_GEN_ATTEMPTS, ALPHABET, LETTER_SCORES } from './constants';
-import type { GridSizeKey } from './constants';
+import type { GridSizeKey, DifficultyKey } from './constants';
 import type { Cell, Word, GameState } from './types';
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
@@ -61,6 +61,33 @@ function riggedHand(
   const weights = letters.map(l => 1 / Math.pow(coverage[l] + 1, difficulty));
   const all = weightedSample(letters, weights, handSize + bonusSize);
   return { hand: all.slice(0, handSize), bonus: all.slice(handSize) };
+}
+
+// ── Lucky draw pool generation ────────────────────────────────────────────────
+
+function generateLuckyDrawPool(
+  grid: Cell[][], handLetters: string[], bonusLetters: string[], difficultyKey: DifficultyKey
+): string[] {
+  if (difficultyKey === 'hard') return [];
+
+  // All unique letters on the grid (word cells, non-wild)
+  const gridLetters = new Set<string>();
+  const N = grid.length;
+  for (let r = 0; r < N; r++)
+    for (let c = 0; c < N; c++) {
+      const cell = grid[r][c];
+      if (cell.wordIds.length > 0 && !cell.isWild)
+        gridLetters.add(cell.letter);
+    }
+
+  // Letters not in player's initial hand/bonus
+  const playerLetters = new Set([...handLetters, ...bonusLetters]);
+  const pool = [...gridLetters].filter(l => !playerLetters.has(l));
+
+  // Randomly remove 1 (easy) or 2 (medium) to introduce uncertainty
+  const shuffled = shuffle(pool);
+  const removeCount = difficultyKey === 'easy' ? 1 : 2;
+  return shuffled.slice(removeCount);
 }
 
 // ── Grid helpers ──────────────────────────────────────────────────────────────
@@ -143,7 +170,6 @@ function tryPlaceOneWord(grid: Cell[][], words: Word[], word: string, id: number
 function placeMultipliers(
   grid: Cell[][], doubleCount: number, tripleCount: number
 ): void {
-  // Collect candidate cells: word cells that are not wild
   const candidates: { r: number; c: number; primaryWordId: number }[] = [];
   const N = grid.length;
   for (let r = 0; r < N; r++)
@@ -153,7 +179,6 @@ function placeMultipliers(
         candidates.push({ r, c, primaryWordId: cell.wordIds[0] });
     }
 
-  // Shuffle and place at most one multiplier per word
   const shuffled = shuffle(candidates);
   const usedWords = new Set<number>();
   let placed3 = 0, placed2 = 0;
@@ -175,12 +200,15 @@ function placeMultipliers(
 // ── Score computation ─────────────────────────────────────────────────────────
 
 export function computeWordScore(word: Word, grid: Cell[][]): number {
-  return word.cells.reduce((sum, [r, c]) => {
+  let letterSum = 0;
+  let wordMultiplier = 1;
+  for (const [r, c] of word.cells) {
     const cell = grid[r][c];
-    if (!cell.scratched) return sum;
-    const base = cell.isWild ? 1 : (LETTER_SCORES[cell.letter] ?? 1);
-    return sum + base * (cell.multiplier ?? 1);
-  }, 0);
+    if (!cell.scratched) continue;
+    letterSum += cell.isWild ? 1 : (LETTER_SCORES[cell.letter] ?? 1);
+    if (cell.multiplier) wordMultiplier = Math.max(wordMultiplier, cell.multiplier);
+  }
+  return letterSum * wordMultiplier;
 }
 
 export function computeScore(state: GameState): number {
@@ -189,7 +217,29 @@ export function computeScore(state: GameState): number {
     .reduce((sum, w) => sum + computeWordScore(w, state.grid), 0);
 }
 
+// ── Fog helpers ───────────────────────────────────────────────────────────────
 
+function addAdjacentToFog(fog: Set<string>, grid: Cell[][], r: number, c: number): void {
+  const N = grid.length;
+  const dirs = [[-1,0],[1,0],[0,-1],[0,1]] as const;
+  for (const [dr, dc] of dirs) {
+    const nr = r + dr, nc = c + dc;
+    if (nr >= 0 && nr < N && nc >= 0 && nc < N) {
+      const neighbor = grid[nr][nc];
+      if (neighbor.wordIds.length > 0)
+        fog.add(`${nr},${nc}`);
+    }
+  }
+}
+
+function revealAllFog(fog: Set<string>, grid: Cell[][]): void {
+  const N = grid.length;
+  for (let r = 0; r < N; r++)
+    for (let c = 0; c < N; c++)
+      fog.add(`${r},${c}`);
+}
+
+// ── Grid generation ───────────────────────────────────────────────────────────
 
 function tryGenerateGrid(
   candidates: string[], size: number, targetWords: number
@@ -205,6 +255,10 @@ function tryGenerateGrid(
   return words.length >= targetWords ? { grid, words } : null;
 }
 
+function diffKeyFromValue(difficulty: number): DifficultyKey {
+  return difficulty <= 0.3 ? 'easy' : difficulty <= 0.65 ? 'medium' : 'hard';
+}
+
 function finishGame(
   result: { grid: Cell[][]; words: Word[] },
   difficulty: number,
@@ -213,6 +267,7 @@ function finishGame(
 ): GameState {
   const { grid, words } = result;
   const N = grid.length;
+  const difficultyKey = diffKeyFromValue(difficulty);
 
   for (let r = 0; r < N; r++)
     for (let c = 0; c < N; c++)
@@ -243,6 +298,14 @@ function finishGame(
 
   const { hand: handLetters, bonus: bonusLetters } = riggedHand(grid, difficulty, handSize, bonusSize);
 
+  // Lucky draw pool
+  const luckyDrawPool = generateLuckyDrawPool(grid, handLetters, bonusLetters, difficultyKey);
+
+  // Fog: start with wild cells always visible (special-cased in render),
+  // but cells adjacent to wild cells are NOT initially revealed — player must
+  // scratch wild cells or reveal matching hand tiles to explore.
+  const fogRevealed = new Set<string>();
+
   return {
     grid,
     words: finalWords,
@@ -251,6 +314,10 @@ function finishGame(
     revealedLetters:     new Set(),
     animatedCells:       new Set(),
     newlyAvailableCells: new Set(),
+    fogRevealed,
+    luckyDrawUsed:       false,
+    luckyDrawPool,
+    initialHandLetters:  [...handLetters, ...bonusLetters],
   };
 }
 
@@ -286,19 +353,26 @@ export function revealTile(state: GameState, idx: number, isBonus: boolean): Gam
   if (target[idx].revealed) return state;
   target[idx].revealed = true;
 
-  const revealedLetters = new Set([...state.revealedLetters, target[idx].letter]);
   const newLetter = target[idx].letter;
-  const justAvailable = new Set<string>();
+  const revealedLetters = new Set([...state.revealedLetters, newLetter]);
+
   const N = state.grid.length;
+  const justAvailable = new Set<string>();
+  const newFog = new Set([...state.fogRevealed]);
+
   for (let r = 0; r < N; r++)
     for (let c = 0; c < N; c++) {
       const cell = state.grid[r][c];
-      if (cell.letter === newLetter && cell.wordIds.length > 0 && !cell.scratched && !cell.isWild)
-        justAvailable.add(`${r},${c}`);
+      if (cell.letter === newLetter && cell.wordIds.length > 0 && !cell.isWild) {
+        // Fog: letter revealed → matching cells become visible
+        newFog.add(`${r},${c}`);
+        if (!cell.scratched) justAvailable.add(`${r},${c}`);
+      }
     }
 
   return {
     ...state, hand, bonus, revealedLetters,
+    fogRevealed: newFog,
     animatedCells: new Set(),
     newlyAvailableCells: new Set([...state.newlyAvailableCells, ...justAvailable]),
   };
@@ -309,37 +383,54 @@ export function scratchCell(state: GameState, r: number, c: number): GameState {
   if (cell.scratched || cell.wordIds.length === 0) return state;
   if (!cell.isWild && !state.revealedLetters.has(cell.letter)) return state;
 
-  const grid  = state.grid.map((row, ri) =>
+  const grid = state.grid.map((row, ri) =>
     row.map((cl, ci) => ri === r && ci === c ? { ...cl, scratched: true } : cl)
   );
   const words = state.words.map(w => ({
     ...w, complete: w.cells.every(([wr, wc]) => grid[wr][wc].scratched),
   }));
-  return { ...state, grid, words, animatedCells: new Set([`${r},${c}`]), newlyAvailableCells: new Set() };
+
+  // Fog: scratching a cell reveals adjacent cells
+  const newFog = new Set([...state.fogRevealed]);
+  addAdjacentToFog(newFog, grid, r, c);
+
+  // If all scratchable cells are now scratched, reveal entire grid
+  const allScratched = grid.flat().every(cl => cl.wordIds.length === 0 || cl.scratched);
+  if (allScratched) revealAllFog(newFog, grid);
+
+  return {
+    ...state, grid, words,
+    fogRevealed: newFog,
+    animatedCells: new Set([`${r},${c}`]),
+    newlyAvailableCells: new Set(),
+  };
 }
 
-export function revealAllHand(state: GameState): GameState {
-  let s = state;
-  s.hand.forEach((t, i) => { if (!t.revealed) s = revealTile(s, i, false); });
-  return s;
-}
+export function useLuckyDrawTile(state: GameState, letter: string): GameState {
+  if (state.luckyDrawUsed) return state;
 
-export function revealAllBonus(state: GameState): GameState {
-  let s = state;
-  s.bonus.forEach((t, i) => { if (!t.revealed) s = revealTile(s, i, true); });
-  return s;
-}
-
-export function scratchAllAvailable(state: GameState): GameState {
   const N = state.grid.length;
-  let s = state;
+  const revealedLetters = new Set([...state.revealedLetters, letter]);
+  const newFog = new Set([...state.fogRevealed]);
+  const justAvailable = new Set<string>();
+
   for (let r = 0; r < N; r++)
     for (let c = 0; c < N; c++) {
-      const cl = s.grid[r][c];
-      if (!cl.scratched && cl.wordIds.length > 0 && (cl.isWild || s.revealedLetters.has(cl.letter)))
-        s = scratchCell(s, r, c);
+      const cell = state.grid[r][c];
+      if (cell.letter === letter && cell.wordIds.length > 0 && !cell.isWild) {
+        newFog.add(`${r},${c}`);
+        if (!cell.scratched) justAvailable.add(`${r},${c}`);
+      }
     }
-  return s;
+
+  return {
+    ...state,
+    revealedLetters,
+    fogRevealed: newFog,
+    luckyDrawUsed: true,
+    animatedCells: new Set(),
+    newlyAvailableCells: new Set([...state.newlyAvailableCells, ...justAvailable]),
+  };
 }
 
 export function tileIsUseful(letter: string, state: GameState): boolean {

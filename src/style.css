@@ -22,7 +22,6 @@ body {
   border: 3px solid #c95f00;
   position: relative;
   overflow: hidden;
-  /* Performance: isolate ticket from outer layout reflows */
   contain: layout;
 }
 .ticket::before {
@@ -54,6 +53,16 @@ body {
   color: #6d3a1a; letter-spacing: .5px;
 }
 .config-sep { opacity: .4; }
+.hdr-btns { display: flex; gap: 5px; align-items: center; }
+.btn-icon {
+  border: 1.5px solid rgba(255,255,255,.5);
+  border-radius: 20px; padding: 2px 8px;
+  background: rgba(255,255,255,.3); font-size: 12px;
+  cursor: pointer; display: flex; align-items: center; gap: 3px;
+  transition: all .15s; flex-shrink: 0; font-weight: 900;
+  color: #6d3a1a; font-family: 'Nunito', sans-serif;
+}
+.btn-icon:hover { background: rgba(255,255,255,.55); transform: scale(1.08); }
 .btn-hs {
   border: 1.5px solid rgba(255,255,255,.5);
   border-radius: 50%; width: 26px; height: 26px;
@@ -66,33 +75,13 @@ body {
 /* ── Grid section ───────────────────────────────────────────────────────────── */
 .grid-section { display: flex; flex-direction: column; gap: 4px; }
 
-/* ── Word badges ────────────────────────────────────────────────────────────── */
-.badges { display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; }
-.badge {
-  background: rgba(255,255,255,.25);
-  border: 1.5px solid rgba(255,255,255,.45);
-  border-radius: 20px; padding: 1px 7px;
-  font-size: 9px; font-weight: 800; color: #5d4037;
-  user-select: none; letter-spacing: .5px;
-  transition: all .2s;
-}
-.badge.done { background: #c8e6c9; border-color: #2e7d32; color: #1b5e20; }
-.badge-clickable { cursor: pointer; }
-.badge-clickable:hover {
-  background: rgba(255,255,255,.55); border-color: rgba(255,255,255,.85);
-  transform: translateY(-1px); box-shadow: 0 3px 8px rgba(0,0,0,.18);
-}
-.badge-clickable:active { transform: translateY(0); }
-
 /* ── Grid ───────────────────────────────────────────────────────────────────── */
 .grid {
   display: grid;
-  /* columns set inline per game via style attribute */
   gap: 2px;
   background: rgba(0,0,0,.25);
   border: 2px solid rgba(0,0,0,.3);
   border-radius: 6px; padding: 2px;
-  /* Performance: grid is a self-contained paint layer */
   contain: layout style paint;
 }
 
@@ -103,7 +92,6 @@ body {
   font-family: 'Fredoka One', cursive; font-size: 12px;
   border-radius: 2px; user-select: none;
   position: relative;
-  /* Performance: each cell is fully isolated */
   contain: layout style paint;
   transition: background .18s;
 }
@@ -122,7 +110,6 @@ body {
   outline: 2px solid rgba(249,168,37,.3); outline-offset: 0;
 }
 .cell-word.available.animate-in {
-  /* Pulse stops after 2 cycles to save paint on mobile */
   animation: pulse-available 1.6s ease-in-out 2;
 }
 .cell-word.available:hover {
@@ -139,6 +126,28 @@ body {
   background: #aed581 !important; color: #1b5e20 !important;
   border-color: #558b2f !important;
 }
+
+/* ── Fog of war ─────────────────────────────────────────────────────────────── */
+.cell-word.fog {
+  background: linear-gradient(135deg, #1a237e 0%, #283593 50%, #1a237e 100%);
+  border: 1px solid rgba(100,120,220,.3);
+  cursor: default;
+  overflow: hidden;
+}
+.cell-word.fog::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(
+    60deg,
+    transparent, transparent 3px,
+    rgba(255,255,255,.03) 3px, rgba(255,255,255,.03) 4px
+  );
+}
+.cell-word.fog::after {
+  display: none !important;
+}
+
+/* ── Wild cells ─────────────────────────────────────────────────────────────── */
 .cell-wild {
   background: #fff8e1; border: 1.5px solid #f9a825; font-size: 11px;
 }
@@ -151,7 +160,13 @@ body {
   box-shadow: 0 2px 8px rgba(0,0,0,.22);
   transition: background .1s, transform .1s;
 }
-.cell-wild.word-done { background: #aed581; border-color: #558b2f; }
+.cell-wild.word-done { background: #aed581 !important; border-color: #558b2f !important; color: #1b5e20 !important; }
+.cell-wild.scratched {
+  background: repeating-linear-gradient(
+    45deg, #c8e6c9 0px, #c8e6c9 4px, #b5dab5 4px, #b5dab5 8px
+  );
+  color: #33691e; border: 1px solid rgba(0,100,0,.2);
+}
 
 @keyframes pulse-available {
   0%, 100% { outline-color: rgba(249,168,37,.3); }
@@ -171,7 +186,7 @@ body {
 }
 .cell-word.just-scratched { animation: cellPop .22s ease; }
 
-/* ── Multiplier cell badges ──────────────────────────────────────────────────── */
+/* ── Multiplier badge (top-right corner) ────────────────────────────────────── */
 .cell-double,
 .cell-triple { position: relative; }
 
@@ -187,61 +202,65 @@ body {
   pointer-events: none;
   z-index: 2;
 }
-.cell-double::after {
-  background: #1565c0; color: #fff;
-}
-.cell-triple::after {
-  background: #b71c1c; color: #fff;
-}
-/* Slightly dimmer badge when scratched (cell already shows completion colour) */
+.cell-double::after { background: #1565c0; color: #fff; }
+.cell-triple::after { background: #b71c1c; color: #fff; }
 .cell-word.scratched.cell-double::after { background: #1976d2cc; }
 .cell-word.scratched.cell-triple::after { background: #c62828cc; }
 
-/* ── Bottom section: bonus ABOVE hand ──────────────────────────────────────── */
-.bottom-section {
-  display: flex; flex-direction: column;
-  gap: 10px; margin-top: 8px;
+/* ── Letter score badge (bottom-left corner) ────────────────────────────────── */
+.cell-word::before {
+  content: attr(data-lscore);
+  position: absolute;
+  bottom: 1px; left: 2px;
+  font-family: 'Fredoka One', cursive;
+  font-size: 6px; line-height: 1;
+  color: rgba(0,0,0,.35);
+  pointer-events: none;
+  z-index: 2;
 }
+.cell-word.fog::before { content: ''; }
+.cell-word.scratched::before { color: rgba(0,80,0,.35); }
 
-/* ── Bonus section ──────────────────────────────────────────────────────────── */
-.bonus-section {
-  display: flex; flex-direction: column; align-items: center; gap: 5px;
-  background: rgba(255,255,255,.15);
-  border: 1.5px solid rgba(255,255,255,.35);
-  border-radius: 12px; padding: 8px 12px;
-}
-.bonus-tiles {
-  display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;
-}
-.bonus-section .tile { width: 52px; height: 52px; font-size: 20px; }
-.bonus-section .tile.hidden { font-size: 22px; }
+/* ── Bottom section ─────────────────────────────────────────────────────────── */
+.bottom-section { margin-top: 6px; }
+.hidden-panel { display: none !important; }
 
-/* ── Hand section ───────────────────────────────────────────────────────────── */
-.hand-section {
+/* ── Combined hand panel ────────────────────────────────────────────────────── */
+.hand-panel {
   background: rgba(255,255,255,.12);
   border: 1.5px solid rgba(255,255,255,.3);
-  border-radius: 12px; padding: 8px 10px;
+  border-radius: 12px; padding: 7px 9px;
 }
 .section-label {
-  font-family: 'Fredoka One', cursive; font-size: 12px; color: #9b1313;
-  text-align: center; margin-bottom: 6px;
+  font-family: 'Fredoka One', cursive; font-size: 11px; color: #9b1313;
+  text-align: center; margin-bottom: 5px;
 }
 .sub-hint {
   font-family: 'Nunito', sans-serif; font-size: 8px;
-  font-weight: 800; color: #6d3a1a; letter-spacing: .5px;
+  font-weight: 800; color: #6d3a1a; letter-spacing: .4px;
 }
 .tile-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(38px, 1fr));
-  gap: 5px;
+  gap: 4px;
+}
+
+/* ── Lucky draw panel ───────────────────────────────────────────────────────── */
+.lucky-panel {
+  background: linear-gradient(135deg, rgba(20,100,30,.18), rgba(10,80,20,.12));
+  border: 1.5px solid rgba(46,125,50,.4);
+  border-radius: 12px; padding: 7px 9px;
+}
+.lucky-tiles {
+  display: flex; flex-wrap: wrap; gap: 4px; justify-content: center;
+  margin-top: 2px;
 }
 
 /* ── Tile ───────────────────────────────────────────────────────────────────── */
 .tile {
-  aspect-ratio: 1;
+  width: 34px; height: 34px;
   border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  font-family: 'Fredoka One', cursive; font-size: 17px;
+  font-family: 'Fredoka One', cursive; font-size: 14px;
   border: 2px solid;
   user-select: none; position: relative; overflow: hidden;
   transition: transform .18s;
@@ -249,28 +268,70 @@ body {
 .tile.hidden {
   background: radial-gradient(circle at 38% 32%, #f0ece4, #c9a87c);
   border-color: #8d6e63; cursor: pointer;
-  box-shadow: inset 0 2px 5px rgba(255,255,255,.55), 0 2px 5px rgba(0,0,0,.2);
+  box-shadow: inset 0 2px 4px rgba(255,255,255,.55), 0 2px 4px rgba(0,0,0,.2);
 }
 .tile.hidden::after {
   content: ''; position: absolute; top: 12%; left: 12%;
   width: 28%; height: 28%;
   background: rgba(255,255,255,.55); border-radius: 50%;
 }
-.tile.hidden:hover { transform: scale(1.1); }
+.tile.hidden:hover { transform: scale(1.12); }
+
+/* ── Bonus tile ─────────────────────────────────────────────────────────────── */
 .tile.bonus-tile.hidden {
   background: radial-gradient(circle at 38% 32%, #ff8a65, #bf360c);
-  border-color: #7f2400; color: #fff; font-size: 22px;
+  border-color: #7f2400; color: #fff; font-size: 16px;
 }
 .tile.bonus-tile.hidden::after { display: none; }
-.tile.revealed {
-  background: radial-gradient(circle at 38% 32%, #fff9e6, #ffe082);
-  border-color: #f57f17; color: #3e2723; cursor: default;
+
+/* ── Revealed tile (scratched look) ─────────────────────────────────────────── */
+.tile.revealed.scratched-look {
+  background: repeating-linear-gradient(
+    45deg,
+    #c8e6c9 0px, #c8e6c9 3px,
+    #b5dab5 3px, #b5dab5 6px
+  );
+  border-color: #388e3c; color: #1b5e20; cursor: default;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,.15);
 }
-.tile.revealed.useful {
-  background: radial-gradient(circle at 38% 32%, #c8e6c9, #a5d6a7);
+.tile.revealed.scratched-look.useful {
+  background: repeating-linear-gradient(
+    45deg,
+    #a5d6a7 0px, #a5d6a7 3px,
+    #81c784 3px, #81c784 6px
+  );
+  border-color: #2e7d32;
+  box-shadow: 0 0 0 2px rgba(46,125,50,.4), inset 0 1px 3px rgba(0,0,0,.1);
+}
+.tile.bonus-tile.revealed.scratched-look {
+  border-color: #e65100;
+  background: repeating-linear-gradient(
+    45deg,
+    #ffe0b2 0px, #ffe0b2 3px,
+    #ffcc80 3px, #ffcc80 6px
+  );
+  color: #bf360c;
+}
+.tile.bonus-tile.revealed.scratched-look.useful {
+  background: repeating-linear-gradient(
+    45deg,
+    #a5d6a7 0px, #a5d6a7 3px,
+    #81c784 3px, #81c784 6px
+  );
   border-color: #2e7d32; color: #1b5e20;
 }
-.tile.bonus-tile.revealed { border-color: #e65100; }
+
+/* ── Lucky draw tile ────────────────────────────────────────────────────────── */
+.tile.lucky-tile {
+  background: radial-gradient(circle at 38% 32%, #e8f5e9, #a5d6a7);
+  border-color: #2e7d32; color: #1b5e20; cursor: pointer;
+  font-size: 14px;
+}
+.tile.lucky-tile:hover {
+  transform: scale(1.15);
+  box-shadow: 0 0 0 3px rgba(46,125,50,.35), 0 3px 8px rgba(0,0,0,.2);
+}
+.tile.lucky-tile::after { display: none; }
 
 /* ── Score bar ──────────────────────────────────────────────────────────────── */
 .score-bar {
@@ -289,9 +350,9 @@ body {
 .score-stars { font-size: 14px; letter-spacing: 1px; color: #c95f00; margin-left: 2px; }
 
 /* ── Buttons ────────────────────────────────────────────────────────────────── */
-.btn-row { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.btn-row { display: flex; gap: 6px; margin-top: 8px; }
 .btn {
-  flex: 1; min-width: 120px; padding: 8px 6px;
+  flex: 1; padding: 8px 6px;
   border: none; border-radius: 10px;
   font-family: 'Fredoka One', cursive; font-size: 13px;
   cursor: pointer; transition: transform .15s;
@@ -340,7 +401,7 @@ body {
 .error-body  { font-size: 13px; font-weight: 700; color: #6d3a1a; line-height: 1.6; }
 .error-btn   { margin-top: 6px; padding: 10px 32px; font-size: 15px; }
 
-/* ── Modal base (shared by def / nt / hs modals) ───────────────────────────── */
+/* ── Modal base ─────────────────────────────────────────────────────────────── */
 .def-modal-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,.55);
   display: flex; align-items: center; justify-content: center;
@@ -392,6 +453,37 @@ body {
   max-height: 280px; overflow: auto;
 }
 
+/* ── Words list modal ───────────────────────────────────────────────────────── */
+.words-modal { max-width: 420px; }
+.words-modal-body {
+  flex-direction: column; gap: 10px; padding: 12px !important;
+  display: flex !important;
+}
+.words-modal-badges {
+  display: flex; flex-wrap: wrap; gap: 5px; justify-content: center;
+}
+.words-modal-hint {
+  text-align: center; font-size: 10px; font-weight: 700;
+  color: #8d6e63; letter-spacing: .5px;
+}
+
+/* ── Word badges ────────────────────────────────────────────────────────────── */
+.badge {
+  background: rgba(255,255,255,.25);
+  border: 1.5px solid rgba(255,255,255,.45);
+  border-radius: 20px; padding: 3px 9px;
+  font-size: 11px; font-weight: 800; color: #5d4037;
+  user-select: none; letter-spacing: .5px;
+  transition: all .2s;
+}
+.badge.done { background: #c8e6c9; border-color: #2e7d32; color: #1b5e20; }
+.badge-clickable { cursor: pointer; }
+.badge-clickable:hover {
+  background: rgba(255,255,255,.55); border-color: rgba(255,255,255,.85);
+  transform: translateY(-1px); box-shadow: 0 3px 8px rgba(0,0,0,.18);
+}
+.badge-clickable:active { transform: translateY(0); }
+
 /* ── New-ticket modal ───────────────────────────────────────────────────────── */
 .nt-modal { max-width: 420px; }
 .nt-body { flex-direction: column; gap: 14px; padding: 14px 14px 16px; }
@@ -415,7 +507,6 @@ body {
 .nt-pill-main { font-family: 'Fredoka One', cursive; font-size: 13px; color: inherit; }
 .nt-pill-sub  { font-size: 9px; font-weight: 800; color: #8d6e63; letter-spacing: .4px; }
 .nt-diff-pill.active .nt-pill-sub { color: rgba(255,255,255,.7); }
-
 .nt-size-pills { display: flex; gap: 6px; }
 .nt-size-pill {
   flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
@@ -530,8 +621,55 @@ body {
 }
 .sum-actions .btn { flex: 1; font-size: 13px; padding: 9px 6px; }
 
+/* ── Achievements modal ─────────────────────────────────────────────────────── */
+.ach-modal { max-width: 430px; }
+.ach-body {
+  flex-direction: column; display: flex !important;
+  padding: 0 !important; gap: 0; max-height: 75vh; overflow: hidden;
+}
+.ach-progress-bar {
+  height: 5px; background: rgba(0,0,0,.08);
+  border-bottom: 1px solid rgba(0,0,0,.05);
+}
+.ach-progress-fill {
+  height: 100%; background: linear-gradient(90deg, #2e7d32, #66bb6a);
+  transition: width .4s ease;
+}
+.ach-list { flex: 1; overflow-y: auto; padding: 4px 0; }
+.ach-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 14px; border-bottom: 1px solid rgba(0,0,0,.05);
+}
+.ach-row:last-child { border-bottom: none; }
+.ach-unlocked { background: linear-gradient(90deg, rgba(200,230,201,.25), transparent); }
+.ach-locked   { opacity: .55; }
+.ach-icon { font-size: 22px; flex-shrink: 0; width: 30px; text-align: center; }
+.ach-info { flex: 1; min-width: 0; }
+.ach-title {
+  font-family: 'Fredoka One', cursive; font-size: 14px; color: #3e2723;
+}
+.ach-desc { font-size: 11px; font-weight: 600; color: #6d3a1a; line-height: 1.4; margin-top: 1px; }
+.ach-check { font-size: 14px; color: #2e7d32; font-weight: 900; flex-shrink: 0; }
+
+/* ── Achievement toast ──────────────────────────────────────────────────────── */
+.ach-toast {
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(80px);
+  background: linear-gradient(135deg, #1b5e20, #2e7d32);
+  color: #fff; border-radius: 14px; padding: 10px 16px;
+  display: flex; align-items: center; gap: 10px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.35);
+  z-index: 2000; opacity: 0;
+  transition: transform .35s cubic-bezier(.34,1.56,.64,1), opacity .35s ease;
+  min-width: 220px; max-width: 320px;
+  pointer-events: none;
+}
+.ach-toast.ach-toast-visible { transform: translateX(-50%) translateY(0); opacity: 1; }
+.ach-toast-icon { font-size: 24px; flex-shrink: 0; }
+.ach-toast-text { display: flex; flex-direction: column; gap: 1px; }
+.ach-toast-label { font-size: 9px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; opacity: .7; }
+.ach-toast-title { font-family: 'Fredoka One', cursive; font-size: 15px; }
+
 /* ── Performance: touch devices ────────────────────────────────────────────── */
-/* Hover effects are meaningless on touch and cause "stuck hover" states */
 @media (hover: none) {
   .cell { transition: none !important; }
   .cell-word.available:hover,
@@ -543,7 +681,6 @@ body {
   .tile { transition: none !important; }
   .tile.hidden:hover { transform: none !important; }
   .btn:hover { transform: none !important; }
-  /* Limit pulsing cells to 1 cycle on touch to reduce paint pressure */
   .cell-word.available.animate-in {
     animation-iteration-count: 1 !important;
   }
@@ -556,4 +693,5 @@ body {
   .cell-word.just-scratched,
   .loading-icon,
   .def-spinner { animation: none !important; }
+  .ach-toast { transition: none !important; }
 }

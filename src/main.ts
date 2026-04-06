@@ -1,15 +1,15 @@
 import './style.css';
 import { generateGameAsync, revealTile, scratchCell,
-         revealAllHand, revealAllBonus, scratchAllAvailable,
-         computeScore } from './gameLogic';
+         useLuckyDrawTile, computeScore } from './gameLogic';
 import { render, renderLoading, updateLoadingProgress, renderError,
          showDefinitionModal, hideDefinitionModal,
          showNewTicketModal, hideNewTicketModal,
          showHighScoreModal, showSummaryModal, hideSummaryModal,
+         showAchievementsModal, showAchievementToast,
          type RenderCallbacks } from './render';
-import { DIFFICULTY_PRESETS, GRID_CONFIGS } from './constants';
+import { DIFFICULTY_PRESETS, GRID_CONFIGS, ACHIEVEMENTS } from './constants';
 import type { DifficultyKey, GridSizeKey } from './constants';
-import type { GameState, GameConfig, HighScore, Word } from './types';
+import type { GameState, GameConfig, HighScore, AchievementRecord, Word } from './types';
 
 // ── Word bank ─────────────────────────────────────────────────────────────────
 
@@ -77,7 +77,6 @@ function getAllScores(): Partial<Record<DifficultyKey, Partial<Record<GridSizeKe
 
 function saveScore(state: GameState, config: GameConfig): void {
   const wordsComplete = state.words.filter(w => w.complete).length;
-  if (wordsComplete === 0) return;
   const score  = computeScore(state);
   const scores = getScoresFor(config.difficultyKey, config.gridSizeKey);
   scores.push({
@@ -92,6 +91,72 @@ function saveScore(state: GameState, config: GameConfig): void {
   try {
     localStorage.setItem(hsKey(config.difficultyKey, config.gridSizeKey), JSON.stringify(scores.slice(0, 100)));
   } catch { /* storage full */ }
+}
+
+// ── Achievements ──────────────────────────────────────────────────────────────
+
+function loadAchievements(): Record<string, AchievementRecord> {
+  try {
+    const raw = localStorage.getItem('luckyLetters_achievements');
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+
+function saveAchievements(data: Record<string, AchievementRecord>): void {
+  try { localStorage.setItem('luckyLetters_achievements', JSON.stringify(data)); } catch {}
+}
+
+function getUnlockedIds(): Set<string> {
+  const data = loadAchievements();
+  return new Set(Object.entries(data).filter(([,v]) => v.unlocked).map(([k]) => k));
+}
+
+/** Check achievements against current state; return newly unlocked definitions. */
+function checkAchievements(
+  s: GameState, config: GameConfig, elapsedMs: number
+): { id: string; icon: string; title: string }[] {
+  const data = loadAchievements();
+  const doneWords = s.words.filter(w => w.complete);
+  const score     = computeScore(s);
+  const totalWords = GRID_CONFIGS[config.gridSizeKey].targetWords;
+  const wildcardCells = s.grid.flat().filter(c => c.isWild);
+  const allWildScratched = wildcardCells.every(c => c.scratched);
+  const allScratched = s.grid.flat().every(c => c.wordIds.length === 0 || c.scratched);
+
+  // Words without any wildcard cells
+  const wordsNoWild = doneWords.filter(w =>
+    !w.cells.some(([r, c]) => s.grid[r][c].isWild)
+  );
+
+  const conditions: Record<string, boolean> = {
+    'first_word':      doneWords.length >= 1,
+    'find_5_words':    doneWords.length >= 5,
+    'find_10_words':   doneWords.length >= 10,
+    'perfect_card':    doneWords.length === totalWords,
+    'hard_15_words':   config.difficultyKey === 'hard' && doneWords.length >= 15,
+    '7_letter_word':   doneWords.some(w => w.text.length >= 7),
+    '8_letter_word':   doneWords.some(w => w.text.length >= 8),
+    '5_words_no_wild': wordsNoWild.length >= 5,
+    'triple_word':     doneWords.some(w => w.cells.some(([r, c]) => s.grid[r][c].multiplier === 3)),
+    'high_scorer':     score >= 500,
+    'lucky_draw_win':  s.luckyDrawUsed && doneWords.length > 0,
+    'speed_demon':     elapsedMs > 0 && elapsedMs < 180000 && doneWords.length >= 10,
+    'fog_explorer':    allScratched,
+    'wildcard_master': wildcardCells.length > 0 && allWildScratched,
+  };
+
+  const newlyUnlocked: { id: string; icon: string; title: string }[] = [];
+
+  for (const ach of ACHIEVEMENTS) {
+    const already = data[ach.id]?.unlocked ?? false;
+    if (!already && conditions[ach.id]) {
+      data[ach.id] = { unlocked: true, unlockedAt: new Date().toISOString() };
+      newlyUnlocked.push({ id: ach.id, icon: ach.icon, title: ach.title });
+    }
+  }
+
+  if (newlyUnlocked.length) saveAchievements(data);
+  return newlyUnlocked;
 }
 
 // ── App state ─────────────────────────────────────────────────────────────────
@@ -122,16 +187,11 @@ function resetSessionState(): void {
 
 // ── Summary helpers ───────────────────────────────────────────────────────────
 
-/** Snapshot the timer and persist the score. Idempotent — safe to call twice. */
 function finaliseSession(): void {
   timerEnd ??= Date.now();
   if (state) saveScore(state, currentConfig);
 }
 
-/**
- * Auto-trigger path: summary pops up on its own after all words are done.
- * Buttons: "Play Again" (same config) and "Change Settings".
- */
 function showAutoSummary(): void {
   if (!state || summaryShown) return;
   summaryShown = true;
@@ -169,25 +229,24 @@ const callbacks: RenderCallbacks = {
     if (!timerStart) timerStart = Date.now();
     update(scratchCell(state, r, c));
   },
-  onRevealAllHand:   () => state && update(revealAllHand(state)),
-  onRevealAllBonus:  () => state && update(revealAllBonus(state)),
-  onScratchAllAvail: () => state && update(scratchAllAvailable(state)),
+  onLuckyDrawPick: (letter) => {
+    if (!state) return;
+    if (!timerStart) timerStart = Date.now();
+    update(useLuckyDrawTile(state, letter));
+  },
 
   onNewGame: () => {
-    // Step 1: player picks their new settings first.
+    // Pick settings first
     showNewTicketModal(currentConfig, (newConfig) => {
       hideNewTicketModal();
 
-      // Step 2: if there's a meaningful game to recap and the auto-summary
-      // hasn't already shown it, show the summary of the OLD game now.
-      // Every exit from this summary (button, Escape, backdrop) leads to
-      // starting the new game — the player has already committed.
-      if (state && computeScore(state) > 0 && !summaryShown) {
+      // Always show summary of the current game before starting a new one
+      if (state && !summaryShown) {
         summaryShown = true;
         finaliseSession();
 
         const snapState  = state;
-        const snapConfig = currentConfig;  // config of the game being summarised
+        const snapConfig = currentConfig;
 
         showSummaryModal(snapState, snapConfig, getElapsedMs(), {
           onStart: () => {
@@ -197,35 +256,42 @@ const callbacks: RenderCallbacks = {
           },
         });
       } else {
-        // Nothing to recap — start straight away.
         currentConfig = newConfig;
         startNewGame();
       }
     });
   },
 
-  onWordClick:      (word) => handleWordClick(word),
+  onWordClick: (word, onDefinitionClosed) => handleWordClick(word, onDefinitionClosed),
   onShowHighScores: () => showHighScoreModal(getAllScores(), currentConfig),
+  onShowAchievements: () => showAchievementsModal(getUnlockedIds()),
 };
 
 function update(next: GameState): void {
   state = next;
   render(state, callbacks, currentConfig);
 
-  // Auto-trigger summary when all words are complete.
+  // Check achievements on every state change
+  const newly = checkAchievements(state, currentConfig, getElapsedMs());
+  // Show toasts sequentially with slight delay
+  newly.forEach((ach, i) => {
+    setTimeout(() => showAchievementToast(ach.icon, ach.title), i * 1200);
+  });
+
+  // Auto-trigger summary when all words are complete
   if (!summaryShown && state.words.length > 0 && state.words.every(w => w.complete)) {
     timerEnd = Date.now();
     setTimeout(showAutoSummary, 700);
   }
 }
 
-async function handleWordClick(word: string): Promise<void> {
-  showDefinitionModal(word, null);
+async function handleWordClick(word: string, onClosed: () => void): Promise<void> {
+  showDefinitionModal(word, null, onClosed);
   try {
     const def = await getDefinition(word);
-    showDefinitionModal(word, def ?? '(No definition found)');
+    showDefinitionModal(word, def ?? '(No definition found)', onClosed);
   } catch {
-    showDefinitionModal(word, '⚠️ Could not load dictionary.\nMake sure the /dictionary/ folder is in public/.');
+    showDefinitionModal(word, '⚠️ Could not load dictionary.\nMake sure the /dictionary/ folder is in public/.', onClosed);
   }
 }
 
