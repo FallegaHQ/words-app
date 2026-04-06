@@ -64,10 +64,20 @@ export interface GameState {
   revealedLetters:     Set<string>;
   animatedCells:       Set<string>;
   newlyAvailableCells: Set<string>;
-  // Fog of War
-  fogRevealed:         Set<string>;   // "r,c" keys of cells visible through fog
-  // Lucky Draw
+  fogRevealed:         Set<string>;
   luckyDrawUsed:       boolean;
-  luckyDrawPool:       string[];      // letters available in lucky draw
-  initialHandLetters:  string[];      // for reference
+  luckyDrawPool:       string[];
+  initialHandLetters:  string[];
+}
+
+// ── UI Callbacks ──────────────────────────────────────────────────────────────
+
+export interface RenderCallbacks {
+  onRevealTile:       (idx: number, isBonus: boolean) => void;
+  onScratchCell:      (r: number, c: number) => void;
+  onLuckyDrawPick:    (letter: string) => void;
+  onNewGame:          () => void;
+  onWordClick:        (word: string, onDefinitionClosed: () => void) => void;
+  onShowHighScores:   () => void;
+  onShowAchievements: () => void;
 }
