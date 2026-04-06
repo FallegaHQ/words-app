@@ -1,6 +1,6 @@
 import { GRID_CONFIGS, DIFFICULTY_PRESETS } from './constants';
 import type { GridSizeKey, DifficultyKey } from './constants';
-import { tileIsUseful } from './gameLogic';
+import { tileIsUseful, computeScore, computeWordScore } from './gameLogic';
 import type { GameState, GameConfig, HighScore } from './types';
 
 // ── Callbacks ────────────────────────────────────────────────────────────────
@@ -117,6 +117,7 @@ function scoreToStars(words: number, total: number): string {
 // ── Cell / tile class derivation ──────────────────────────────────────────────
 
 function cellClass(r: number, c: number, cell: import('./types').Cell, state: GameState): string {
+  const multCls = cell.multiplier === 3 ? ' cell-triple' : cell.multiplier === 2 ? ' cell-double' : '';
   if (cell.isWild) {
     const done = cell.wordIds.some(id => state.words.find(w => w.id === id)?.complete);
     if (cell.scratched) {
@@ -129,13 +130,13 @@ function cellClass(r: number, c: number, cell: import('./types').Cell, state: Ga
   if (cell.scratched) {
     const done = cell.wordIds.some(id => state.words.find(w => w.id === id)?.complete);
     const just = state.animatedCells.has(`${r},${c}`);
-    return `cell cell-word scratched${done ? ' word-done' : ''}${just ? ' just-scratched' : ''}`;
+    return `cell cell-word scratched${done ? ' word-done' : ''}${just ? ' just-scratched' : ''}${multCls}`;
   }
   if (state.revealedLetters.has(cell.letter)) {
     const animIn = state.newlyAvailableCells.has(`${r},${c}`);
-    return `cell cell-word available${animIn ? ' animate-in' : ''}`;
+    return `cell cell-word available${animIn ? ' animate-in' : ''}${multCls}`;
   }
-  return 'cell cell-word locked';
+  return `cell cell-word locked${multCls}`;
 }
 
 function cellContent(cell: import('./types').Cell): string {
@@ -183,9 +184,10 @@ function buildHeader(config: GameConfig): string {
 function buildGridHTML(state: GameState): string {
   const N = state.grid.length;
   const cells = state.grid.flatMap((row, r) =>
-    row.map((cell, c) =>
-      `<div class="${cellClass(r, c, cell, state)}">${cellContent(cell)}</div>`
-    )
+    row.map((cell, c) => {
+      const multAttr = cell.multiplier ? ` data-mult="${cell.multiplier}×"` : '';
+      return `<div class="${cellClass(r, c, cell, state)}"${multAttr}>${cellContent(cell)}</div>`;
+    })
   ).join('');
   return `<div class="grid" style="grid-template-columns:repeat(${N},1fr)">${cells}</div>`;
 }
@@ -237,10 +239,12 @@ function hintHTML(state: GameState): string {
   return `<span class="hint-idle">Scratch bonus tiles or start a new ticket</span>`;
 }
 
-function scoreBarHTML(words: number, total: number): string {
+function scoreBarHTML(words: number, total: number, score: number): string {
   const stars = scoreToStars(words, total);
+  const pts   = score > 0 ? `<span class="score-sep">·</span><span class="score-pts">${score.toLocaleString()}</span><span class="score-label">pts</span>` : '';
   return `<span class="score-count">${words}<span class="score-total"> / ${total}</span></span>
           <span class="score-label">words</span>
+          ${pts}
           <span class="score-stars">${stars}</span>`;
 }
 
@@ -250,6 +254,7 @@ function buildInitialHTML(state: GameState, config: GameConfig): string {
   const total  = GRID_CONFIGS[config.gridSizeKey].targetWords;
   const done   = state.words.filter(w => w.complete).length;
   const avail  = countAvail(state);
+  const score  = computeScore(state);
   return `
   <div class="ticket">
     ${buildHeader(config)}
@@ -262,7 +267,7 @@ function buildInitialHTML(state: GameState, config: GameConfig): string {
       ${buildBonusHTML(state)}
       ${buildHandHTML(state)}
     </div>
-    <div class="score-bar">${scoreBarHTML(done, total)}</div>
+    <div class="score-bar">${scoreBarHTML(done, total, score)}</div>
     <div class="btn-row">
       <button id="btn-scratch-avail" class="btn btn-secondary"${avail === 0 ? ' style="display:none"' : ''}>🖊 Scratch All Available</button>
       <button id="btn-new-game" class="btn btn-primary">🎰 New Ticket</button>
@@ -327,6 +332,8 @@ function applyStateToRefs(refs: AppRefs, state: GameState): void {
       const el = cells[r][c], cell = state.grid[r][c];
       setClass(el, cellClass(r, c, cell, state));
       setText(el, cellContent(cell));
+      const multStr = cell.multiplier ? `${cell.multiplier}×` : '';
+      if (el.dataset.mult !== multStr) el.dataset.mult = multStr;
     }
 
   state.hand.forEach((tile, i) => {
@@ -346,8 +353,9 @@ function applyStateToRefs(refs: AppRefs, state: GameState): void {
   );
 
   hint.innerHTML = hintHTML(state);
-  const done = state.words.filter(w => w.complete).length;
-  scoreBar.innerHTML = scoreBarHTML(done, totalWords);
+  const done  = state.words.filter(w => w.complete).length;
+  const score = computeScore(state);
+  scoreBar.innerHTML = scoreBarHTML(done, totalWords, score);
   scratchAvailBtn.style.display = countAvail(state) > 0 ? '' : 'none';
 }
 
@@ -588,3 +596,138 @@ export function hideHighScoreModal(): void {
   el.classList.remove('visible');
   el.addEventListener('transitionend', () => el.remove(), { once: true });
 }
+
+// ── Summary modal ─────────────────────────────────────────────────────────────
+
+const SUM_MODAL_ID = 'sum-modal-overlay';
+
+export interface SummaryCallbacks {
+  onPlayAgain?:      () => void;
+  onChangeSettings?: () => void;
+  onStart?:          () => void; // single-button mode: config already chosen
+}
+
+function formatDuration(ms: number): string {
+  const s   = Math.floor(ms / 1000);
+  const m   = Math.floor(s / 60);
+  const rem = s % 60;
+  return `${m}:${rem.toString().padStart(2, '0')}`;
+}
+
+export function showSummaryModal(
+  state:     GameState,
+  config:    GameConfig,
+  elapsedMs: number,
+  cb:        SummaryCallbacks
+): void {
+  document.getElementById(SUM_MODAL_ID)?.remove();
+
+  const cfg         = GRID_CONFIGS[config.gridSizeKey];
+  const doneWords   = state.words.filter(w => w.complete);
+  const totalWords  = cfg.targetWords;
+  const score       = computeScore(state);
+  const stars       = scoreToStars(doneWords.length, totalWords);
+  const allDone     = doneWords.length === totalWords;
+  const diffLbl     = diffLabel(config.difficulty);
+  const sizeLbl     = sizeLabel(config.gridSizeKey);
+  const timeStr     = elapsedMs > 0 ? formatDuration(elapsedMs) : '—';
+
+  const wordRows = doneWords
+    .map(w => ({ word: w, pts: computeWordScore(w, state.grid) }))
+    .sort((a, b) => b.pts - a.pts)
+    .map(({ word, pts }) => {
+      const hasDouble = word.cells.some(([r, c]) => state.grid[r][c].multiplier === 2);
+      const hasTriple = word.cells.some(([r, c]) => state.grid[r][c].multiplier === 3);
+      const tag = hasTriple
+        ? '<span class="sum-mult-tag sum-triple">3×</span>'
+        : hasDouble
+          ? '<span class="sum-mult-tag sum-double">2×</span>'
+          : '';
+      return `<div class="sum-word-row">
+        <span class="sum-word-text">${word.text}${tag}</span>
+        <span class="sum-word-pts">${pts}<span class="sum-word-pts-label"> pts</span></span>
+      </div>`;
+    }).join('');
+
+  const incompleteCount = state.words.length - doneWords.length;
+  const incompleteNote  = incompleteCount > 0
+    ? `<div class="sum-incomplete">${incompleteCount} word${incompleteCount !== 1 ? 's' : ''} left on the board</div>`
+    : '';
+
+  // Single-button mode: new config is already chosen, just need to start
+  const isSingleMode = !!cb.onStart;
+  const actionsHTML  = isSingleMode
+    ? `<button class="btn btn-primary sum-btn-start">🎰 Let's Play!</button>`
+    : `<button class="btn btn-secondary sum-btn-settings">⚙️ Change Settings</button>
+       <button class="btn btn-primary sum-btn-again">🎰 Play Again</button>`;
+
+  const overlay = document.createElement('div');
+  overlay.id        = SUM_MODAL_ID;
+  overlay.className = 'def-modal-overlay';
+  overlay.innerHTML = `
+    <div class="def-modal sum-modal" role="dialog" aria-modal="true">
+      <div class="def-modal-header">
+        <span class="def-modal-word">${allDone ? '🎉 Ticket Complete!' : '🎰 Game Over'}</span>
+        ${isSingleMode ? '' : '<button class="def-modal-close" aria-label="Close">✕</button>'}
+      </div>
+      <div class="def-modal-body sum-body">
+
+        <div class="sum-hero">
+          <div class="sum-stars">${stars}</div>
+          <div class="sum-score">${score.toLocaleString()}<span class="sum-score-label"> pts</span></div>
+          <div class="sum-meta">
+            <span class="sum-meta-item">📝 ${doneWords.length} / ${totalWords} words</span>
+            <span class="sum-meta-sep">·</span>
+            <span class="sum-meta-item">${diffLbl}</span>
+            <span class="sum-meta-sep">·</span>
+            <span class="sum-meta-item">🔲 ${sizeLbl}</span>
+            <span class="sum-meta-sep">·</span>
+            <span class="sum-meta-item">⏱ ${timeStr}</span>
+          </div>
+        </div>
+
+        ${doneWords.length > 0 ? `
+        <div class="sum-words-section">
+          <div class="sum-words-label">COMPLETED WORDS</div>
+          <div class="sum-words-list">${wordRows}</div>
+          ${incompleteNote}
+        </div>` : `<div class="sum-no-words">No words completed — better luck next time!</div>`}
+
+        <div class="sum-actions">${actionsHTML}</div>
+
+      </div>
+    </div>`;
+
+  if (isSingleMode) {
+    // In single-button mode the player has already committed to a new game —
+    // every exit path (button, backdrop, Escape) must proceed to start it.
+    const start = cb.onStart!;
+    overlay.querySelector('.sum-btn-start')!.addEventListener('click', start);
+    overlay.addEventListener('click', e => { if (e.target === overlay) start(); });
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { document.removeEventListener('keydown', onKey); start(); }
+    };
+    document.addEventListener('keydown', onKey);
+  } else {
+    // Two-button mode: closing just dismisses the summary (game continues).
+    overlay.querySelector('.sum-btn-again')!.addEventListener('click', cb.onPlayAgain!);
+    overlay.querySelector('.sum-btn-settings')!.addEventListener('click', cb.onChangeSettings!);
+    overlay.querySelector('.def-modal-close')!.addEventListener('click', () => hideSummaryModal());
+    overlay.addEventListener('click', e => { if (e.target === overlay) hideSummaryModal(); });
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { hideSummaryModal(); document.removeEventListener('keydown', onKey); }
+    };
+    document.addEventListener('keydown', onKey);
+  }
+
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add('visible'));
+}
+
+export function hideSummaryModal(): void {
+  const el = document.getElementById(SUM_MODAL_ID);
+  if (!el) return;
+  el.classList.remove('visible');
+  el.addEventListener('transitionend', () => el.remove(), { once: true });
+}
+

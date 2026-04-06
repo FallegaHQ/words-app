@@ -1,4 +1,4 @@
-import { GRID_CONFIGS, MAX_GEN_ATTEMPTS, ALPHABET } from './constants';
+import { GRID_CONFIGS, MAX_GEN_ATTEMPTS, ALPHABET, LETTER_SCORES } from './constants';
 import type { GridSizeKey } from './constants';
 import type { Cell, Word, GameState } from './types';
 
@@ -138,7 +138,58 @@ function tryPlaceOneWord(grid: Cell[][], words: Word[], word: string, id: number
   return true;
 }
 
-// ── Game generation ───────────────────────────────────────────────────────────
+// ── Multiplier placement ──────────────────────────────────────────────────────
+
+function placeMultipliers(
+  grid: Cell[][], doubleCount: number, tripleCount: number
+): void {
+  // Collect candidate cells: word cells that are not wild
+  const candidates: { r: number; c: number; primaryWordId: number }[] = [];
+  const N = grid.length;
+  for (let r = 0; r < N; r++)
+    for (let c = 0; c < N; c++) {
+      const cell = grid[r][c];
+      if (cell.wordIds.length > 0 && !cell.isWild)
+        candidates.push({ r, c, primaryWordId: cell.wordIds[0] });
+    }
+
+  // Shuffle and place at most one multiplier per word
+  const shuffled = shuffle(candidates);
+  const usedWords = new Set<number>();
+  let placed3 = 0, placed2 = 0;
+  for (const { r, c, primaryWordId } of shuffled) {
+    if (usedWords.has(primaryWordId)) continue;
+    if (placed3 < tripleCount) {
+      grid[r][c].multiplier = 3;
+      usedWords.add(primaryWordId);
+      placed3++;
+    } else if (placed2 < doubleCount) {
+      grid[r][c].multiplier = 2;
+      usedWords.add(primaryWordId);
+      placed2++;
+    }
+    if (placed3 >= tripleCount && placed2 >= doubleCount) break;
+  }
+}
+
+// ── Score computation ─────────────────────────────────────────────────────────
+
+export function computeWordScore(word: Word, grid: Cell[][]): number {
+  return word.cells.reduce((sum, [r, c]) => {
+    const cell = grid[r][c];
+    if (!cell.scratched) return sum;
+    const base = cell.isWild ? 1 : (LETTER_SCORES[cell.letter] ?? 1);
+    return sum + base * (cell.multiplier ?? 1);
+  }, 0);
+}
+
+export function computeScore(state: GameState): number {
+  return state.words
+    .filter(w => w.complete)
+    .reduce((sum, w) => sum + computeWordScore(w, state.grid), 0);
+}
+
+
 
 function tryGenerateGrid(
   candidates: string[], size: number, targetWords: number
@@ -157,7 +208,8 @@ function tryGenerateGrid(
 function finishGame(
   result: { grid: Cell[][]; words: Word[] },
   difficulty: number,
-  handSize: number, bonusSize: number, wildCount: number
+  handSize: number, bonusSize: number, wildCount: number,
+  doubleCount: number, tripleCount: number
 ): GameState {
   const { grid, words } = result;
   const N = grid.length;
@@ -187,6 +239,8 @@ function finishGame(
     complete: w.cells.every(([r, c]) => grid[r][c].scratched),
   }));
 
+  placeMultipliers(grid, doubleCount, tripleCount);
+
   const { hand: handLetters, bonus: bonusLetters } = riggedHand(grid, difficulty, handSize, bonusSize);
 
   return {
@@ -208,7 +262,7 @@ export async function generateGameAsync(
   difficulty: number,
   gridSizeKey: GridSizeKey
 ): Promise<GameState> {
-  const { size, targetWords, handSize, bonusSize, wildCount, minWordLen, maxWordLen } = GRID_CONFIGS[gridSizeKey];
+  const { size, targetWords, handSize, bonusSize, wildCount, minWordLen, maxWordLen, doubleCount, tripleCount } = GRID_CONFIGS[gridSizeKey];
   const validWords = wordBank.filter(w => w.length >= minWordLen && w.length <= maxWordLen);
   let result: { grid: Cell[][]; words: Word[] } | null = null;
 
@@ -220,7 +274,7 @@ export async function generateGameAsync(
   }
   if (!result) throw new Error('Could not generate grid after max attempts');
   onProgress(MAX_GEN_ATTEMPTS, MAX_GEN_ATTEMPTS, true);
-  return finishGame(result, difficulty, handSize, bonusSize, wildCount);
+  return finishGame(result, difficulty, handSize, bonusSize, wildCount, doubleCount, tripleCount);
 }
 
 // ── Actions ───────────────────────────────────────────────────────────────────

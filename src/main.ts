@@ -1,10 +1,12 @@
 import './style.css';
 import { generateGameAsync, revealTile, scratchCell,
-         revealAllHand, revealAllBonus, scratchAllAvailable } from './gameLogic';
+         revealAllHand, revealAllBonus, scratchAllAvailable,
+         computeScore } from './gameLogic';
 import { render, renderLoading, updateLoadingProgress, renderError,
          showDefinitionModal, hideDefinitionModal,
          showNewTicketModal, hideNewTicketModal,
-         showHighScoreModal, type RenderCallbacks } from './render';
+         showHighScoreModal, showSummaryModal, hideSummaryModal,
+         type RenderCallbacks } from './render';
 import { DIFFICULTY_PRESETS, GRID_CONFIGS } from './constants';
 import type { DifficultyKey, GridSizeKey } from './constants';
 import type { GameState, GameConfig, HighScore, Word } from './types';
@@ -76,15 +78,17 @@ function getAllScores(): Partial<Record<DifficultyKey, Partial<Record<GridSizeKe
 function saveScore(state: GameState, config: GameConfig): void {
   const wordsComplete = state.words.filter(w => w.complete).length;
   if (wordsComplete === 0) return;
+  const score  = computeScore(state);
   const scores = getScoresFor(config.difficultyKey, config.gridSizeKey);
   scores.push({
     words:         wordsComplete,
     total:         GRID_CONFIGS[config.gridSizeKey].targetWords,
+    score,
     date:          new Date().toISOString(),
     difficultyKey: config.difficultyKey,
     gridSizeKey:   config.gridSizeKey,
   });
-  scores.sort((a, b) => b.words - a.words);
+  scores.sort((a, b) => b.score - a.score || b.words - a.words);
   try {
     localStorage.setItem(hsKey(config.difficultyKey, config.gridSizeKey), JSON.stringify(scores.slice(0, 100)));
   } catch { /* storage full */ }
@@ -92,34 +96,127 @@ function saveScore(state: GameState, config: GameConfig): void {
 
 // ── App state ─────────────────────────────────────────────────────────────────
 
-let state: GameState | null = null;
+let state:         GameState | null = null;
 let currentConfig: GameConfig = {
   difficulty:    DIFFICULTY_PRESETS.medium,
   difficultyKey: 'medium',
   gridSizeKey:   'normal',
 };
 
+// ── Session timer ─────────────────────────────────────────────────────────────
+
+let timerStart:   number | null = null;
+let timerEnd:     number | null = null;
+let summaryShown: boolean       = false;
+
+function getElapsedMs(): number {
+  if (!timerStart) return 0;
+  return (timerEnd ?? Date.now()) - timerStart;
+}
+
+function resetSessionState(): void {
+  timerStart   = null;
+  timerEnd     = null;
+  summaryShown = false;
+}
+
+// ── Summary helpers ───────────────────────────────────────────────────────────
+
+/** Snapshot the timer and persist the score. Idempotent — safe to call twice. */
+function finaliseSession(): void {
+  timerEnd ??= Date.now();
+  if (state) saveScore(state, currentConfig);
+}
+
+/**
+ * Auto-trigger path: summary pops up on its own after all words are done.
+ * Buttons: "Play Again" (same config) and "Change Settings".
+ */
+function showAutoSummary(): void {
+  if (!state || summaryShown) return;
+  summaryShown = true;
+  finaliseSession();
+
+  const snapState  = state;
+  const snapConfig = currentConfig;
+
+  showSummaryModal(snapState, snapConfig, getElapsedMs(), {
+    onPlayAgain: () => {
+      hideSummaryModal();
+      startNewGame();
+    },
+    onChangeSettings: () => {
+      hideSummaryModal();
+      showNewTicketModal(currentConfig, (newConfig) => {
+        hideNewTicketModal();
+        currentConfig = newConfig;
+        startNewGame();
+      });
+    },
+  });
+}
+
+// ── Render callbacks ──────────────────────────────────────────────────────────
+
 const callbacks: RenderCallbacks = {
-  onRevealTile:      (i, isBonus) => state && update(revealTile(state, i, isBonus)),
-  onScratchCell:     (r, c)       => state && update(scratchCell(state, r, c)),
-  onRevealAllHand:   ()           => state && update(revealAllHand(state)),
-  onRevealAllBonus:  ()           => state && update(revealAllBonus(state)),
-  onScratchAllAvail: ()           => state && update(scratchAllAvailable(state)),
+  onRevealTile: (i, isBonus) => {
+    if (!state) return;
+    if (!timerStart) timerStart = Date.now();
+    update(revealTile(state, i, isBonus));
+  },
+  onScratchCell: (r, c) => {
+    if (!state) return;
+    if (!timerStart) timerStart = Date.now();
+    update(scratchCell(state, r, c));
+  },
+  onRevealAllHand:   () => state && update(revealAllHand(state)),
+  onRevealAllBonus:  () => state && update(revealAllBonus(state)),
+  onScratchAllAvail: () => state && update(scratchAllAvailable(state)),
+
   onNewGame: () => {
+    // Step 1: player picks their new settings first.
     showNewTicketModal(currentConfig, (newConfig) => {
       hideNewTicketModal();
-      if (state) saveScore(state, currentConfig);
-      currentConfig = newConfig;
-      startNewGame();
+
+      // Step 2: if there's a meaningful game to recap and the auto-summary
+      // hasn't already shown it, show the summary of the OLD game now.
+      // Every exit from this summary (button, Escape, backdrop) leads to
+      // starting the new game — the player has already committed.
+      if (state && computeScore(state) > 0 && !summaryShown) {
+        summaryShown = true;
+        finaliseSession();
+
+        const snapState  = state;
+        const snapConfig = currentConfig;  // config of the game being summarised
+
+        showSummaryModal(snapState, snapConfig, getElapsedMs(), {
+          onStart: () => {
+            hideSummaryModal();
+            currentConfig = newConfig;
+            startNewGame();
+          },
+        });
+      } else {
+        // Nothing to recap — start straight away.
+        currentConfig = newConfig;
+        startNewGame();
+      }
     });
   },
-  onWordClick: (word) => handleWordClick(word),
+
+  onWordClick:      (word) => handleWordClick(word),
   onShowHighScores: () => showHighScoreModal(getAllScores(), currentConfig),
 };
 
 function update(next: GameState): void {
   state = next;
   render(state, callbacks, currentConfig);
+
+  // Auto-trigger summary when all words are complete.
+  if (!summaryShown && state.words.length > 0 && state.words.every(w => w.complete)) {
+    timerEnd = Date.now();
+    setTimeout(showAutoSummary, 700);
+  }
 }
 
 async function handleWordClick(word: string): Promise<void> {
@@ -134,6 +231,7 @@ async function handleWordClick(word: string): Promise<void> {
 
 async function startNewGame(): Promise<void> {
   hideDefinitionModal();
+  resetSessionState();
   renderLoading();
 
   let nextState: GameState | null = null;
