@@ -33,6 +33,18 @@ export const DIFFICULTY_PRESETS = {
 
 export type DifficultyKey = keyof typeof DIFFICULTY_PRESETS;
 
+// ── Tile drafting: picks per grid size × difficulty (see IMPLEMENTATION_GUIDE) ─
+
+/** draftCount = how many letter picks before the hand is dealt */
+export const DRAFT_COUNTS: Record<GridSizeKey, Record<DifficultyKey, number>> = {
+  small:  { easy: 2, medium: 2, hard: 1 },
+  normal: { easy: 3, medium: 3, hard: 2 },
+  large:  { easy: 4, medium: 3, hard: 2 },
+};
+
+/** Appended to ISO date (YYYYMMDD) for daily seed string identity */
+export const DAILY_SEED_SUFFIX = '-LUCKY-LETTERS-DAILY';
+
 // ── Achievements ──────────────────────────────────────────────────────────────
 
 import type { AchievementDef } from './types';

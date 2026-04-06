@@ -1,50 +1,53 @@
 // ── Difficulty / rigging algorithms ──────────────────────────────────────────
-// Controls which words are chosen and which hand tiles are dealt, based on
-// the difficulty setting. Higher difficulty → rarer letters, harder words.
+// Grid word order is seed-only (fair shuffle). Hand/bonus tiles use coverage weights.
 
 import { ALPHABET } from '../../constants';
 import type { Cell } from '../../types';
-import { shuffle, weightedSample } from './utils';
+import { shuffle, weightedSample, type RandomFn } from './utils';
 
-// Letter frequency rank (most common = 0). Scrabble-inspired, used to gauge
-// how "easy" a word's letter set is for the player.
 const FREQ_RANK: Record<string, number> = Object.fromEntries(
   'ETAOINSHRDLCUMWFGYPBVKJXQZ'.split('').map((l, i) => [l, i])
 );
 
-/** Returns a 0–25 score for a word: higher = rarer/harder letters. */
 function wordDifficulty(word: string): number {
   return word.split('').reduce((s, l) => s + (FREQ_RANK[l] ?? 13), 0) / word.length;
 }
 
 /**
- * Sort a shuffled word list so that at the requested difficulty level,
- * harder words (rare letters) surface towards the top.
- *
- * difficulty 0 → common letters dominate
- * difficulty 1 → rare letters dominate
+ * Shuffle + difficulty-biased sort for **hand assembly only** (not grid placement).
+ * Harder settings surface rarer letters earlier in the sampling order influence.
  */
-export function riggedCandidates(words: string[], difficulty: number): string[] {
-  const shuffled = shuffle(words);
+export function riggedTileSourceOrder(words: string[], difficulty: number, random: RandomFn): string[] {
+  const shuffled = shuffle(words, random);
   const scored = shuffled.map(w => ({
     word: w,
-    score: wordDifficulty(w) * difficulty + Math.random() * (1 - difficulty) * 26,
+    score: wordDifficulty(w) * difficulty + random() * (1 - difficulty) * 26,
   }));
   scored.sort((a, b) => b.score - a.score);
   return scored.map(s => s.word);
 }
 
 /**
- * Deal a hand of tiles that is intentionally biased by difficulty.
- *
- * At low difficulty, tiles are more likely to match frequent grid letters
- * (making more cells immediately scratchable). At high difficulty, the
- * sampling weight is flatter so useful letters are rarer in the hand.
+ * Grid generation: difficulty must **not** affect which words appear — only the seed.
+ * Pure shuffle of the eligible word list.
+ */
+export function shuffleWordBankForGrid(words: string[], random: RandomFn): string[] {
+  return shuffle(words, random);
+}
+
+/**
+ * Deal hand + bonus tiles biased by difficulty.
+ * `guaranteedLetters` are placed at the start of the hand (in order, deduped),
+ * then remaining slots are filled from weighted sampling (excluding used letters).
  */
 export function riggedHand(
-  grid: Cell[][], difficulty: number, handSize: number, bonusSize: number
+  grid: Cell[][],
+  difficulty: number,
+  handSize: number,
+  bonusSize: number,
+  random: RandomFn,
+  guaranteedLetters: string[] = []
 ): { hand: string[]; bonus: string[] } {
-  // Count how many word-cells on the grid use each letter
   const coverage: Record<string, number> = Object.fromEntries(
     ALPHABET.split('').map(l => [l, 0])
   );
@@ -53,14 +56,23 @@ export function riggedHand(
       if (cell.wordIds.length > 0 && !cell.isWild)
         coverage[cell.letter]++;
 
-  // Weight: high coverage + low difficulty → high weight (easy to unlock cells)
-  // weight = 1 / coverage^difficulty  means easy mode skews toward common letters
-  const letters = ALPHABET.split('');
-  const weights = letters.map(l => 1 / Math.pow(coverage[l] + 1, difficulty));
+  const seen = new Set<string>();
+  const guaranteed: string[] = [];
+  for (const raw of guaranteedLetters) {
+    const L = raw.toUpperCase();
+    if (!/[A-Z]/.test(L) || seen.has(L)) continue;
+    seen.add(L);
+    guaranteed.push(L);
+    if (guaranteed.length >= handSize) break;
+  }
 
-  const all = weightedSample(letters, weights, handSize + bonusSize);
-  return {
-    hand:  all.slice(0, handSize),
-    bonus: all.slice(handSize),
-  };
+  const needFromPool = handSize - guaranteed.length + bonusSize;
+  const pool = ALPHABET.split('').filter(l => !seen.has(l));
+  const weights = pool.map(l => 1 / Math.pow(coverage[l] + 1, difficulty));
+  const extra = weightedSample(pool, weights, needFromPool, random);
+
+  const hand = [...guaranteed, ...extra.slice(0, handSize - guaranteed.length)];
+  const bonus = extra.slice(handSize - guaranteed.length, handSize - guaranteed.length + bonusSize);
+
+  return { hand, bonus };
 }

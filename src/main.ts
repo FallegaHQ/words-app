@@ -1,43 +1,79 @@
 import './style.css';
 
 // Core
-import { generateGameAsync, revealTile, scratchCell, useLuckyDrawTile } from './core/gameLogic';
+import {
+  generateGridOnlyAsync,
+  assembleHandIntoState,
+  revealTile,
+  scratchCell,
+  useLuckyDrawTile,
+  buildDraftSegments,
+  revealFullGridFog,
+  generateRandomSeedString,
+} from './core/gameLogic';
 import { getWordBank, getDefinition, prefetchDictChunks } from './core/wordBank';
 import { saveScore, getAllScores, getUnlockedIds } from './core/storage';
 import { checkAchievements } from './core/achievementCheck';
 
-// UI — screens
-import { renderHub }                                   from './ui/hub';
-import { render, renderLoading, updateLoadingProgress, renderError, resetRenderer } from './ui/game';
+// UI
+import { renderHub } from './ui/hub';
+import {
+  render,
+  renderLoading,
+  updateLoadingProgress,
+  renderError,
+  resetRenderer,
+  startElapsedTimer,
+  defaultGameViewContext,
+} from './ui/game';
+import { autoScratchAvailable } from './ui/autoScratch';
+import { initSFX, playSFX } from './ui/sfx';
 
-// UI — modals
-import { showDefinitionModal, hideDefinitionModal }    from './ui/modals/definition';
-import { showNewTicketModal, hideNewTicketModal }       from './ui/modals/newTicket';
-import { showHighScoreModal }                           from './ui/modals/highScores';
-import { showSummaryModal, hideSummaryModal }           from './ui/modals/summary';
-import { showAchievementsModal }                        from './ui/modals/achievements';
-import { showAchievementToast }                        from './ui/modals/toast';
-import { showHowToPlayModal }                          from './ui/modals/howToPlay';
-import { createOverlay, openModal, closeModalById }    from './ui/modals/base';
+import { showDefinitionModal, hideDefinitionModal } from './ui/modals/definition';
+import { showNewTicketModal, hideNewTicketModal } from './ui/modals/newTicket';
+import { showHighScoreModal } from './ui/modals/highScores';
+import { showSummaryModal, hideSummaryModal } from './ui/modals/summary';
+import { showAchievementsModal } from './ui/modals/achievements';
+import { showAchievementToast } from './ui/modals/toast';
+import { showHowToPlayModal } from './ui/modals/howToPlay';
+import { createOverlay, openModal, closeModalById } from './ui/modals/base';
 
-// Types
-import { DIFFICULTY_PRESETS } from './constants';
-import type { GameState, GameConfig, RenderCallbacks, Word } from './types';
+import { DIFFICULTY_PRESETS, DRAFT_COUNTS, ALPHABET, GRID_CONFIGS } from './constants';
+import type { GameState, GameConfig, RenderCallbacks, Word, GameViewContext } from './types';
 
 // ── App state ─────────────────────────────────────────────────────────────────
 
-let state:         GameState | null = null;
+let state: GameState | null = null;
 let currentConfig: GameConfig = {
   difficulty:    DIFFICULTY_PRESETS.medium,
   difficultyKey: 'medium',
   gridSizeKey:   'normal',
+  seed:          generateRandomSeedString(),
+  seedMode:      'random',
 };
+
+/** Draft picks (uppercase), one per segment */
+let draftPicks: string[] = [];
+let draftSegments: string[][] = [];
+/** UI flow after grid load */
+let gamePhase:
+  | 'wild_autoscratch'
+  | 'draft'
+  | 'dealing'
+  | 'hand_autoscratch'
+  | 'play'
+  | 'lucky_msg'
+  | 'end_countdown' = 'play';
+
+let endGameCountdown: number | null = null;
+let lastCompleteWordCount = 0;
+let autoScratchRunning = false;
 
 // ── Session timer ─────────────────────────────────────────────────────────────
 
-let timerStart:   number | null = null;
-let timerEnd:     number | null = null;
-let summaryShown: boolean       = false;
+let timerStart: number | null = null;
+let timerEnd: number | null = null;
+let summaryShown = false;
 
 function getElapsedMs(): number {
   if (!timerStart) return 0;
@@ -48,20 +84,220 @@ function resetSession(): void {
   timerStart   = null;
   timerEnd     = null;
   summaryShown = false;
+  draftPicks   = [];
+  draftSegments = [];
+  endGameCountdown = null;
+  lastCompleteWordCount = 0;
 }
-
-// ── Session helpers ───────────────────────────────────────────────────────────
 
 function finaliseSession(): void {
   timerEnd ??= Date.now();
   if (state) saveScore(state, currentConfig);
 }
 
-function showAutoSummary(): void {
+function sfxAuto(type: 'tick' | 'scratch'): void {
+  playSFX(type);
+}
+
+// ── Achievements + word-complete SFX ──────────────────────────────────────────
+
+function runAchievementSweep(): void {
+  if (!state) return;
+  const nw = state.words.filter(w => w.complete).length;
+  if (nw > lastCompleteWordCount) {
+    for (let k = 0; k < nw - lastCompleteWordCount; k++) playSFX('word_complete');
+    lastCompleteWordCount = nw;
+  }
+  const newly = checkAchievements(state, currentConfig, getElapsedMs());
+  newly.forEach(ach => showAchievementToast(ach.icon, ach.title));
+
+  if (!summaryShown && state.words.length > 0 && state.words.every(w => w.complete)) {
+    timerEnd = Date.now();
+    void runEndGameCountdownAndSummary();
+  }
+}
+
+// ── View context for hand panel / header ──────────────────────────────────────
+
+function buildViewCtx(): GameViewContext {
+  const v = defaultGameViewContext();
+  if (!state) return v;
+
+  v.seedDisplay      = currentConfig.seed;
+  v.hideSeedInHeader = currentConfig.seedMode === 'daily_challenge';
+  v.showCountdown    = endGameCountdown;
+
+  if (gamePhase === 'end_countdown') {
+    v.showWordsButton      = true;
+    v.handPanelMessageOnly = null;
+    v.handStatusMessage    =
+      '🎉 All words complete! The full board unlocks after the countdown — you can still use Hub / New Ticket above.';
+    v.lockHandTileClicks   = true;
+    v.interactionLocked    = true;
+    return v;
+  }
+
+  if (gamePhase === 'wild_autoscratch') {
+    v.showWordsButton       = false;
+    v.handPanelMessageOnly  = 'Opening wild ⭐ cells…';
+    v.handStatusMessage     = 'Auto-scratch in progress — the grid is locked until this finishes.';
+    v.lockHandTileClicks    = true;
+    v.interactionLocked     = true;
+    return v;
+  }
+
+  if (gamePhase === 'draft') {
+    v.showWordsButton   = false;
+    v.draft = {
+      segments:     draftSegments,
+      segmentIndex: draftPicks.length,
+      picks:        [...draftPicks],
+    };
+    v.handStatusMessage  = '';
+    v.interactionLocked  = false;
+    return v;
+  }
+
+  if (gamePhase === 'dealing') {
+    v.showWordsButton      = false;
+    v.handPanelMessageOnly = 'Dealing your tiles…';
+    v.handStatusMessage    = 'Building your hand from your draft picks.';
+    v.lockHandTileClicks   = true;
+    v.interactionLocked    = true;
+    return v;
+  }
+
+  if (gamePhase === 'hand_autoscratch') {
+    v.showWordsButton      = false;
+    v.handStatusMessage    = 'Auto-scratching every open cell — please wait…';
+    v.handPanelMessageOnly = null;
+    v.lockHandTileClicks   = true;
+    v.interactionLocked    = true;
+    return v;
+  }
+
+  if (gamePhase === 'lucky_msg') {
+    v.showWordsButton      = true;
+    v.handPanelMessageOnly = 'Your lucky letter is in play — keep scratching!';
+    v.handStatusMessage    = '';
+    v.lockHandTileClicks   = false;
+    v.interactionLocked    = false;
+    return v;
+  }
+
+  // play
+  v.showWordsButton      = true;
+  v.handPanelMessageOnly = null;
+  v.handStatusMessage    = '';
+  v.lockHandTileClicks   = false;
+  v.interactionLocked    = false;
+  return v;
+}
+
+// ── State update ──────────────────────────────────────────────────────────────
+
+function update(next: GameState, opts?: { skipAchievements?: boolean }): void {
+  state = next;
+  render(state, callbacks, currentConfig, buildViewCtx());
+  if (opts?.skipAchievements) return;
+  runAchievementSweep();
+}
+
+/**
+ * Auto-scratch all eligible cells. After Lucky Draw, pass `endInLuckyMsg` so the hand
+ * panel shows the post-lucky message instead of tiles again.
+ */
+async function runAutoScratchNormal(opts?: { endInLuckyMsg?: boolean }): Promise<void> {
+  if (!state || autoScratchRunning) return;
+  autoScratchRunning = true;
+  try {
+    gamePhase = 'hand_autoscratch';
+    render(state, callbacks, currentConfig, buildViewCtx());
+    await autoScratchAvailable(
+      () => state!,
+      (r, c) => {
+        state = scratchCell(state!, r, c);
+        update(state!, { skipAchievements: true });
+      },
+      150,
+      { wildOnly: false, onSFX: sfxAuto }
+    );
+    gamePhase = opts?.endInLuckyMsg ? 'lucky_msg' : 'play';
+    if (state) render(state, callbacks, currentConfig, buildViewCtx());
+    runAchievementSweep();
+  } finally {
+    autoScratchRunning = false;
+  }
+}
+
+async function runWildAutoScratch(): Promise<void> {
+  if (!state) return;
+  gamePhase = 'wild_autoscratch';
+  render(state, callbacks, currentConfig, buildViewCtx());
+  await autoScratchAvailable(
+    () => state!,
+    (r, c) => {
+      state = scratchCell(state!, r, c);
+      update(state!, { skipAchievements: true });
+    },
+    150,
+    { wildOnly: true, onSFX: sfxAuto }
+  );
+  runAchievementSweep();
+}
+
+async function finishDraftAndDeal(): Promise<void> {
+  if (!state) return;
+  const { handSize, bonusSize } = GRID_CONFIGS[currentConfig.gridSizeKey];
+
+  gamePhase = 'dealing';
+  render(state, callbacks, currentConfig, buildViewCtx());
+  await new Promise<void>(r => setTimeout(r, 350));
+
+  state = assembleHandIntoState(
+    state,
+    currentConfig.difficulty,
+    handSize,
+    bonusSize,
+    currentConfig.difficultyKey,
+    draftPicks,
+    currentConfig.seed
+  );
+
+  gamePhase = 'hand_autoscratch';
+  update(state, { skipAchievements: true });
+  await runAutoScratchNormal();
+
+  gamePhase = 'play';
+  if (state) {
+    render(state, callbacks, currentConfig, buildViewCtx());
+    prefetchDictChunks(state.words.map((w: Word) => w.text));
+  }
+  runAchievementSweep();
+}
+
+async function runEndGameCountdownAndSummary(): Promise<void> {
   if (!state || summaryShown) return;
   summaryShown = true;
   finaliseSession();
+  playSFX('game_complete');
 
+  gamePhase = 'end_countdown';
+  for (let t = 5; t >= 1; t--) {
+    endGameCountdown = t;
+    if (state) render(state, callbacks, currentConfig, buildViewCtx());
+    await new Promise<void>(r => setTimeout(r, 1000));
+  }
+
+  endGameCountdown = null;
+  gamePhase = 'play';
+  state = revealFullGridFog(state);
+  render(state, callbacks, currentConfig, buildViewCtx());
+  showAutoSummary();
+}
+
+function showAutoSummary(): void {
+  if (!state) return;
   showSummaryModal(state, currentConfig, getElapsedMs(), {
     onPlayAgain: () => {
       hideSummaryModal();
@@ -84,17 +320,33 @@ const callbacks: RenderCallbacks = {
   onRevealTile: (i, isBonus) => {
     if (!state) return;
     if (!timerStart) timerStart = Date.now();
-    update(revealTile(state, i, isBonus));
+    playSFX('tile_reveal');
+    update(revealTile(state, i, isBonus), { skipAchievements: true });
+    void runAutoScratchNormal();
   },
-  onScratchCell: (r, c) => {
+
+  onDraftPick: letter => {
+    if (!state || gamePhase !== 'draft') return;
+    const L = letter.toUpperCase();
+    if (!/^[A-Z]$/.test(L)) return;
+    playSFX('draft_pick');
+    draftPicks.push(L);
+    if (draftPicks.length >= draftSegments.length) {
+      playSFX('draft_done');
+      void finishDraftAndDeal();
+    } else {
+      render(state, callbacks, currentConfig, buildViewCtx());
+    }
+  },
+
+  onScratchCell: () => { /* scratching is automatic — no cell UI */ },
+
+  onLuckyDrawPick: letter => {
     if (!state) return;
     if (!timerStart) timerStart = Date.now();
-    update(scratchCell(state, r, c));
-  },
-  onLuckyDrawPick: (letter) => {
-    if (!state) return;
-    if (!timerStart) timerStart = Date.now();
-    update(useLuckyDrawTile(state, letter));
+    playSFX('lucky_pick');
+    update(useLuckyDrawTile(state, letter), { skipAchievements: true });
+    void runAutoScratchNormal({ endInLuckyMsg: true });
   },
 
   onNewGame: () => {
@@ -152,6 +404,13 @@ const callbacks: RenderCallbacks = {
                 startNewGame();
               });
             },
+            onDailyChallenge: () => {
+              showNewTicketModal(currentConfig, newConfig => {
+                hideNewTicketModal();
+                currentConfig = newConfig;
+                startNewGame();
+              }, { dailyChallenge: true });
+            },
             onHowToPlay: showHowToPlayModal,
           });
         },
@@ -161,25 +420,10 @@ const callbacks: RenderCallbacks = {
     openModal(overlay);
   },
 
-  onWordClick:        (word, onClosed) => handleWordClick(word, onClosed),
-  onShowHighScores:   ()               => showHighScoreModal(getAllScores(), currentConfig),
-  onShowAchievements: ()               => showAchievementsModal(getUnlockedIds()),
+  onWordClick: (word, onClosed) => handleWordClick(word, onClosed),
+  onShowHighScores: () => showHighScoreModal(getAllScores(), currentConfig),
+  onShowAchievements: () => showAchievementsModal(getUnlockedIds()),
 };
-
-// ── State update cycle ────────────────────────────────────────────────────────
-
-function update(next: GameState): void {
-  state = next;
-  render(state, callbacks, currentConfig);
-
-  const newly = checkAchievements(state, currentConfig, getElapsedMs());
-  newly.forEach(ach => showAchievementToast(ach.icon, ach.title));
-
-  if (!summaryShown && state.words.length > 0 && state.words.every(w => w.complete)) {
-    timerEnd = Date.now();
-    setTimeout(showAutoSummary, 700);
-  }
-}
 
 // ── Word definition ───────────────────────────────────────────────────────────
 
@@ -201,32 +445,49 @@ async function startNewGame(): Promise<void> {
   resetRenderer();
   renderLoading();
 
-  let nextState: GameState | null = null;
+  let gridState: GameState | null = null;
   let failed = false;
 
   try {
     const wordBank = await getWordBank();
-    const cfg      = currentConfig;
     await Promise.all([
-      generateGameAsync(
+      generateGridOnlyAsync(
         wordBank,
-        (attempt, max, done) => updateLoadingProgress(attempt, max, done),
-        cfg.difficulty,
-        cfg.gridSizeKey
-      ).then((s: GameState) => { nextState = s; })
-       .catch(() => { failed = true; }),
+        (a, m, d) => updateLoadingProgress(a, m, d),
+        currentConfig.gridSizeKey,
+        currentConfig.seed
+      )
+        .then((s: GameState) => { gridState = s; })
+        .catch(() => { failed = true; }),
       new Promise<void>(resolve => setTimeout(resolve, 2000)),
     ]);
-  } catch { failed = true; }
+  } catch {
+    failed = true;
+  }
 
-  if (failed || !nextState) { renderError(() => startNewGame()); return; }
+  if (failed || !gridState) {
+    renderError(() => startNewGame());
+    return;
+  }
 
-  const resolvedState = nextState as GameState;
-  update(resolvedState);
-  prefetchDictChunks(resolvedState.words.map((w: Word) => w.text));
+  state = gridState;
+
+  const draftCount = DRAFT_COUNTS[currentConfig.gridSizeKey][currentConfig.difficultyKey];
+  draftSegments = buildDraftSegments(ALPHABET, draftCount);
+  draftPicks    = [];
+
+  if (!timerStart) timerStart = Date.now();
+  startElapsedTimer(getElapsedMs);
+
+  await runWildAutoScratch();
+
+  gamePhase = 'draft';
+  if (state) render(state, callbacks, currentConfig, buildViewCtx());
 }
 
-// ── Bootstrap — show hub first ────────────────────────────────────────────────
+// ── Bootstrap ─────────────────────────────────────────────────────────────────
+
+initSFX();
 
 renderHub({
   onNewGame: () => {
@@ -235,6 +496,13 @@ renderHub({
       currentConfig = newConfig;
       startNewGame();
     });
+  },
+  onDailyChallenge: () => {
+    showNewTicketModal(currentConfig, newConfig => {
+      hideNewTicketModal();
+      currentConfig = newConfig;
+      startNewGame();
+    }, { dailyChallenge: true });
   },
   onHowToPlay: showHowToPlayModal,
 });

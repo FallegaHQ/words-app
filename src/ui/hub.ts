@@ -2,8 +2,10 @@
 // Landing screen shown before any game starts.
 
 export interface HubCallbacks {
-  onNewGame:   () => void;
-  onHowToPlay: () => void;
+  onNewGame:        () => void;
+  /** Same daily board for every player (UTC date seed) */
+  onDailyChallenge: () => void;
+  onHowToPlay:      () => void;
 }
 
 export function renderHub(cb: HubCallbacks): void {
@@ -26,7 +28,8 @@ export function renderHub(cb: HubCallbacks): void {
         </div>
 
         <div class="hub-actions">
-          <button id="hub-btn-new-game"   class="btn btn-primary  hub-btn-main">🎰 New Game</button>
+          <button id="hub-btn-new-game" class="btn btn-primary  hub-btn-main">🎰 New Game</button>
+          <button id="hub-btn-daily" class="btn btn-secondary hub-btn-daily">📅 Daily Challenge</button>
           <button id="hub-btn-how-to-play" class="btn btn-secondary hub-btn-secondary">❓ How to Play</button>
         </div>
 
@@ -37,5 +40,6 @@ export function renderHub(cb: HubCallbacks): void {
     </div>`;
 
   root.querySelector('#hub-btn-new-game')!   .addEventListener('click', cb.onNewGame);
+  root.querySelector('#hub-btn-daily')!      .addEventListener('click', cb.onDailyChallenge);
   root.querySelector('#hub-btn-how-to-play')!.addEventListener('click', cb.onHowToPlay);
 }

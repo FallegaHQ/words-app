@@ -3,7 +3,7 @@
 // multiplier distribution. Pure algorithmic logic — no game state or scoring.
 
 import type { Cell, Word } from '../../types';
-import { shuffle, randInt } from './utils';
+import { shuffle, randInt, type RandomFn } from './utils';
 
 // ── Grid initialisation ───────────────────────────────────────────────────────
 
@@ -91,7 +91,8 @@ export function placeWord(
  * picks one at random, and places it. Returns true on success.
  */
 export function tryPlaceOneWord(
-  grid: Cell[][], words: Word[], word: string, id: number
+  grid: Cell[][], words: Word[], word: string, id: number,
+  random: RandomFn = Math.random
 ): boolean {
   const opts: { sr: number; sc: number; horiz: boolean }[] = [];
 
@@ -116,7 +117,7 @@ export function tryPlaceOneWord(
   }
 
   if (!opts.length) return false;
-  const o = opts[randInt(opts.length)];
+  const o = opts[randInt(opts.length, random)];
   placeWord(grid, words, word, o.sr, o.sc, o.horiz, id);
   return true;
 }
@@ -128,7 +129,8 @@ export function tryPlaceOneWord(
  * At most one multiplier per word (uses the word's primaryWordId to track).
  */
 export function placeMultipliers(
-  grid: Cell[][], doubleCount: number, tripleCount: number
+  grid: Cell[][], doubleCount: number, tripleCount: number,
+  random: RandomFn = Math.random
 ): void {
   const N = grid.length;
   const candidates: { r: number; c: number; primaryWordId: number }[] = [];
@@ -143,7 +145,7 @@ export function placeMultipliers(
   const usedWords = new Set<number>();
   let placed3 = 0, placed2 = 0;
 
-  for (const { r, c, primaryWordId } of shuffle(candidates)) {
+  for (const { r, c, primaryWordId } of shuffle(candidates, random)) {
     if (usedWords.has(primaryWordId)) continue;
     if (placed3 < tripleCount) {
       grid[r][c].multiplier = 3;

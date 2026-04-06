@@ -929,3 +929,170 @@ body {
   .def-spinner { animation: none !important; }
   .ach-toast { transition: none !important; }
 }
+
+/* ── Seed badge (header) ───────────────────────────────────────────────────── */
+.seed-row {
+  display: flex; align-items: center; justify-content: center;
+  gap: 6px; margin-top: 6px; flex-wrap: wrap;
+}
+.seed-badge {
+  font-family: 'Fredoka One', cursive; font-size: 11px;
+  background: rgba(0,0,0,.12); border: 1px solid rgba(0,0,0,.15);
+  border-radius: 8px; padding: 3px 10px; color: #5d3a1a;
+  letter-spacing: .5px; max-width: 100%; word-break: break-all;
+}
+.seed-copy-btn {
+  border: 1.5px solid rgba(255,255,255,.5); border-radius: 8px;
+  background: rgba(255,255,255,.35); padding: 2px 8px; cursor: pointer;
+  font-size: 12px; line-height: 1;
+}
+.seed-copy-btn:hover { background: rgba(255,255,255,.55); }
+
+/* ── Hand panel: fixed min height (draft / tiles / messages) ───────────────── */
+.hand-panel-fixed {
+  min-height: 118px;
+}
+.hand-status-msg {
+  text-align: center; font-size: 10px; font-weight: 900;
+  color: #6d3a1a; margin-bottom: 6px; letter-spacing: .3px;
+}
+/* Larger copy whenever the status slot is visible (draft hint, auto-scratch, end game, …) */
+.hand-panel--has-status #hand-status-slot:not([hidden]) {
+  font-family: 'Fredoka One', cursive;
+  font-size: clamp(13px, 3.6vw, 17px);
+  font-weight: 400;
+  line-height: 1.45;
+  color: #4e342e;
+  padding: 8px 10px 10px;
+  margin-bottom: 8px;
+  letter-spacing: .2px;
+}
+/* Status is the only hand content — tiles hidden: bigger + more vertical room */
+.hand-panel--status-focus #hand-status-slot:not([hidden]) {
+  font-size: clamp(15px, 4.2vw, 20px);
+  padding: 16px 12px 18px;
+  margin-bottom: 0;
+  color: #3e2723;
+}
+.hand-panel--status-focus #hand-panel-core .hand-core-placeholder {
+  display: none;
+}
+.hand-core-placeholder {
+  min-height: 0;
+}
+.hand-message-only {
+  text-align: center; font-size: 13px; font-weight: 800;
+  color: #5d4037; padding: 12px 8px; line-height: 1.4;
+}
+
+/* ── Draft letter grid (neutral — not lucky green) ───────────────────────────── */
+.draft-title { margin-bottom: 6px !important; }
+.draft-letter-grid {
+  display: grid; grid-template-columns: repeat(9, 1fr); gap: 4px;
+}
+.draft-letter-btn {
+  aspect-ratio: 1; min-width: 0;
+  font-family: 'Fredoka One', cursive; font-size: 13px;
+  border: 2px solid rgba(0,0,0,.15); border-radius: 8px;
+  background: rgba(255,255,255,.45); color: #5d4037;
+  cursor: pointer; padding: 0; transition: transform .12s, background .12s;
+}
+.draft-letter-btn:hover {
+  background: rgba(255,255,255,.75); transform: scale(1.06);
+}
+
+/* ── Ticket: block playfield while auto-scratch / countdown (hdr + btn-row stay live) ─ */
+.ticket-interaction-locked .grid-section,
+.ticket-interaction-locked .bottom-section {
+  pointer-events: none;
+  user-select: none;
+}
+.ticket-interaction-locked .hdr,
+.ticket-interaction-locked .btn-row {
+  pointer-events: auto;
+  position: relative;
+  z-index: 40;
+}
+.ticket-locked-hand .tile.hidden { pointer-events: none; opacity: .92; }
+
+/* ── End-game countdown overlay ──────────────────────────────────────────────── */
+.countdown-overlay {
+  position: absolute; inset: 0; z-index: 25;
+  background: rgba(0,0,0,.48); border-radius: 17px;
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: none;
+}
+.countdown-overlay.hidden { display: none !important; }
+.countdown-inner {
+  font-family: 'Fredoka One', cursive; font-size: 22px;
+  color: #fff; text-shadow: 0 2px 8px rgba(0,0,0,.4);
+  text-align: center; padding: 16px;
+}
+
+/* ── Score bar: live clock (sibling of #score-main) ───────────────────────────── */
+.score-time-wrap {
+  display: inline-flex; align-items: baseline; gap: 4px;
+  font-size: 10px; font-weight: 900; color: #6d3a1a;
+  letter-spacing: .5px; text-transform: uppercase;
+}
+.score-elapsed {
+  font-family: 'Fredoka One', cursive; font-size: 14px;
+  color: #9b1313; font-variant-numeric: tabular-nums; text-transform: none;
+}
+
+/* ── New ticket: seed + daily ───────────────────────────────────────────────── */
+.nt-daily-banner {
+  text-align: center; font-size: 12px; font-weight: 700;
+  color: #5d4037; background: rgba(255,193,7,.25);
+  border: 1px solid rgba(255,152,0,.35); border-radius: 10px;
+  padding: 10px 12px; line-height: 1.4;
+}
+.nt-seed-hidden { display: none !important; }
+.nt-seed-modes {
+  display: flex; flex-wrap: wrap; gap: 10px 14px; margin-bottom: 8px;
+}
+.nt-seed-radio {
+  font-size: 11px; font-weight: 800; color: #5d4037;
+  display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+}
+.nt-seed-row {
+  display: flex; gap: 6px; align-items: center;
+}
+.nt-seed-input {
+  flex: 1; min-width: 0; padding: 8px 10px; border-radius: 8px;
+  border: 2px solid rgba(0,0,0,.12); font-size: 12px; font-weight: 700;
+  font-family: 'Nunito', sans-serif;
+}
+.nt-seed-regen, .nt-seed-copy {
+  flex-shrink: 0; width: 36px; height: 36px; border-radius: 8px;
+  border: 2px solid rgba(0,0,0,.12); background: rgba(255,255,255,.5);
+  cursor: pointer; font-size: 16px;
+}
+.nt-seed-hint {
+  font-size: 9px; font-weight: 700; color: #8d6e63; margin-top: 6px;
+  line-height: 1.35;
+}
+.nt-modal-daily .nt-play-btn { margin-top: 4px; }
+
+/* ── Hub: daily button ───────────────────────────────────────────────────────── */
+.hub-btn-daily {
+  font-size: 16px; padding: 12px 20px; border-radius: 12px;
+}
+
+/* ── Summary: revealed letters ──────────────────────────────────────────────── */
+.sum-letters-section {
+  border-top: 1px solid rgba(0,0,0,.07);
+  padding-bottom: 6px;
+}
+.sum-letters-body { padding: 4px 14px 10px; }
+.sum-letters-row {
+  font-size: 13px; font-weight: 800; color: #3e2723;
+  margin-bottom: 6px; line-height: 1.5;
+}
+.sum-letters-tag {
+  display: inline-block; font-size: 8px; font-weight: 900;
+  letter-spacing: .5px; padding: 2px 6px; border-radius: 4px;
+  margin-right: 6px; vertical-align: middle;
+}
+.sum-letters-useful { background: #c8e6c9; color: #1b5e20; }
+.sum-letters-extra  { background: #ffccbc; color: #bf360c; }

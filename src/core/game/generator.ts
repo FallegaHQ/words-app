@@ -1,28 +1,24 @@
 // ── Game generation ───────────────────────────────────────────────────────────
-// Top-level orchestration: runs the crossword-building loop, populates
-// wild cells, deals hand tiles, and assembles the final GameState.
+// Grid + wilds + multipliers are driven only by the seed stream. Hand/bonus/lucky
+// are assembled later via `assembleHandIntoState` (after tile drafting).
 
-import { GRID_CONFIGS, MAX_GEN_ATTEMPTS, ALPHABET } from '../../constants';
+import { GRID_CONFIGS, MAX_GEN_ATTEMPTS, ALPHABET, DAILY_SEED_SUFFIX } from '../../constants';
 import type { GridSizeKey, DifficultyKey } from '../../constants';
-import type { Cell, Word, GameState } from '../../types';
-import { randInt, shuffle } from './utils';
-import { riggedCandidates, riggedHand } from './difficulty';
+import type { Cell, Word, GameState, Tile } from '../../types';
+import { randInt, shuffle, mulberry32, hashSeed, type RandomFn } from './utils';
+import { riggedHand, shuffleWordBankForGrid } from './difficulty';
 import { makeGrid, tryPlaceOneWord, placeWord, placeMultipliers } from './grid';
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function diffKeyFromValue(difficulty: number): DifficultyKey {
   return difficulty <= 0.3 ? 'easy' : difficulty <= 0.65 ? 'medium' : 'hard';
 }
 
-/**
- * Build the Lucky Draw pool: grid letters the player doesn't already hold.
- * Hard mode disables Lucky Draw entirely.
- * Easy mode removes 1 option; Medium removes 2 — keeping some uncertainty.
- */
 function buildLuckyDrawPool(
-  grid: Cell[][], handLetters: string[], bonusLetters: string[],
-  difficultyKey: DifficultyKey
+  grid: Cell[][],
+  handLetters: string[],
+  bonusLetters: string[],
+  difficultyKey: DifficultyKey,
+  random: RandomFn
 ): string[] {
   if (difficultyKey === 'hard') return [];
 
@@ -36,70 +32,54 @@ function buildLuckyDrawPool(
   const pool = [...gridLetters].filter(l => !playerLetters.has(l));
 
   const removeCount = difficultyKey === 'easy' ? 1 : 2;
-  return shuffle(pool).slice(removeCount);
+  return shuffle(pool, random).slice(removeCount);
 }
 
-// ── Grid generation loop ──────────────────────────────────────────────────────
-
-/**
- * One attempt at filling a grid with `targetWords` crossword-style words.
- * Returns null if placement fails (caller retries with new candidates).
- */
 function tryGenerateGrid(
-  candidates: string[], size: number, targetWords: number
+  candidates: string[],
+  size: number,
+  targetWords: number,
+  random: RandomFn
 ): { grid: Cell[][]; words: Word[] } | null {
-  const grid  = makeGrid(size);
+  const grid = makeGrid(size);
   const words: Word[] = [];
 
-  // Seed the grid with the first word, centred horizontally
   const first = candidates[0];
   placeWord(grid, words, first, Math.floor(size / 2), Math.floor((size - first.length) / 2), true, 0);
 
   let id = 1;
   for (let i = 1; i < candidates.length && words.length < targetWords; i++) {
-    if (tryPlaceOneWord(grid, words, candidates[i], id)) id++;
+    if (tryPlaceOneWord(grid, words, candidates[i], id, random)) id++;
   }
 
   return words.length >= targetWords ? { grid, words } : null;
 }
 
-// ── Game assembly ─────────────────────────────────────────────────────────────
-
 /**
- * Takes a successfully-placed grid and completes the game object:
- *   1. Fill empty cells with random filler letters
- *   2. Assign wild (⭐) cells — one per word, at single-membership cells
- *   3. Place multipliers (2× / 3×)
- *   4. Deal rigged hand + bonus tiles
- *   5. Generate Lucky Draw pool
- *   6. Return the initial GameState
+ * After a successful crossword layout: filler letters, wilds, multipliers.
+ * Does not deal hand/bonus (those follow drafting).
  */
-function assembleGame(
-  result:      { grid: Cell[][]; words: Word[] },
-  difficulty:  number,
-  handSize:    number,
-  bonusSize:   number,
-  wildCount:   number,
+function assembleGridOnly(
+  result: { grid: Cell[][]; words: Word[] },
+  wildCount: number,
   doubleCount: number,
   tripleCount: number,
+  random: RandomFn
 ): GameState {
   const { grid, words } = result;
   const N = grid.length;
-  const difficultyKey = diffKeyFromValue(difficulty);
 
-  // 1. Fill filler cells
   for (let r = 0; r < N; r++)
     for (let c = 0; c < N; c++)
-      if (!grid[r][c].letter) grid[r][c].letter = ALPHABET[randInt(26)];
+      if (!grid[r][c].letter) grid[r][c].letter = ALPHABET[randInt(26, random)];
 
-  // 2. Place wild cells (prefer cells that belong to exactly one word)
   const singles: [number, number][] = [];
   for (let r = 0; r < N; r++)
     for (let c = 0; c < N; c++)
       if (grid[r][c].wordIds.length === 1) singles.push([r, c]);
 
   const wordsWithWild = new Set<number>();
-  shuffle(singles)
+  shuffle(singles, random)
     .filter(([r, c]) => {
       const wid = grid[r][c].wordIds[0];
       if (wordsWithWild.has(wid)) return false;
@@ -109,69 +89,186 @@ function assembleGame(
     .slice(0, wildCount)
     .forEach(([r, c]) => { grid[r][c].isWild = true; });
 
-  // 3. Multipliers
-  placeMultipliers(grid, doubleCount, tripleCount);
+  placeMultipliers(grid, doubleCount, tripleCount, random);
 
-  // 4. Hand tiles
-  const { hand: handLetters, bonus: bonusLetters } = riggedHand(grid, difficulty, handSize, bonusSize);
-
-  // 5. Lucky draw pool
-  const luckyDrawPool = buildLuckyDrawPool(grid, handLetters, bonusLetters, difficultyKey);
-
-  // 6. Assemble initial state — no cells scratched, no fog revealed
   const finalWords = words.map(w => ({
     ...w,
-    complete: w.cells.every(([r, c]) => grid[r][c].scratched), // always false initially
+    complete: w.cells.every(([r, c]) => grid[r][c].scratched),
   }));
 
   return {
     grid,
-    words: finalWords,
-    hand:  handLetters.map(l => ({ letter: l, revealed: false })),
-    bonus: bonusLetters.map(l => ({ letter: l, revealed: false })),
+    words:               finalWords,
+    hand:                [],
+    bonus:               [],
     revealedLetters:     new Set(),
     animatedCells:       new Set(),
     newlyAvailableCells: new Set(),
     fogRevealed:         new Set(),
     luckyDrawUsed:       false,
-    luckyDrawPool,
-    initialHandLetters:  [...handLetters, ...bonusLetters],
+    luckyDrawPool:       [],
+    initialHandLetters:  [],
+    draftedLetters:      [],
   };
 }
 
-// ── Public API ────────────────────────────────────────────────────────────────
+/**
+ * Deal hand/bonus/lucky draw using a **separate** RNG keyed by seed + drafted picks
+ * so the same grid seed + same draft yields the same hand.
+ */
+export function assembleHandIntoState(
+  base: GameState,
+  difficulty: number,
+  handSize: number,
+  bonusSize: number,
+  difficultyKey: DifficultyKey,
+  draftedLetters: string[],
+  seedStr: string
+): GameState {
+  const normDraft: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of draftedLetters) {
+    const L = raw.toUpperCase();
+    if (!/[A-Z]/.test(L) || seen.has(L)) continue;
+    seen.add(L);
+    normDraft.push(L);
+  }
+
+  const handRng = mulberry32(hashSeed(`${seedStr}|hand|${normDraft.join('')}`));
+  const { hand: handLetters, bonus: bonusLetters } = riggedHand(
+    base.grid,
+    difficulty,
+    handSize,
+    bonusSize,
+    handRng,
+    normDraft
+  );
+
+  const hand: Tile[] = handLetters.map((letter, i) => ({
+    letter,
+    revealed: i < normDraft.length,
+  }));
+
+  const bonus: Tile[] = bonusLetters.map(l => ({ letter: l, revealed: false }));
+
+  const poolRng = mulberry32(hashSeed(`${seedStr}|lucky|${normDraft.join('')}`));
+  const luckyDrawPool = buildLuckyDrawPool(
+    base.grid,
+    handLetters,
+    bonusLetters,
+    difficultyKey,
+    poolRng
+  );
+
+  const revealedLetters = new Set(normDraft);
+  const draftSet = new Set(normDraft);
+  const N = base.grid.length;
+  const newFog = new Set(base.fogRevealed);
+  const justAvailable = new Set<string>();
+
+  for (let r = 0; r < N; r++)
+    for (let c = 0; c < N; c++) {
+      const cell = base.grid[r][c];
+      if (
+        cell.letter &&
+        draftSet.has(cell.letter) &&
+        cell.wordIds.length > 0 &&
+        !cell.isWild
+      ) {
+        newFog.add(`${r},${c}`);
+        if (!cell.scratched) justAvailable.add(`${r},${c}`);
+      }
+    }
+
+  return {
+    ...base,
+    hand,
+    bonus,
+    luckyDrawPool,
+    initialHandLetters: [...handLetters, ...bonusLetters],
+    draftedLetters: normDraft,
+    revealedLetters,
+    fogRevealed: newFog,
+    newlyAvailableCells: new Set([...base.newlyAvailableCells, ...justAvailable]),
+  };
+}
 
 type ProgressCallback = (attempt: number, max: number, done: boolean) => void;
 
+/** Readable daily seed string (UTC date + app suffix). */
+export function getDailySeedString(): string {
+  return new Date().toISOString().slice(0, 10).replace(/-/g, '') + DAILY_SEED_SUFFIX;
+}
+
+/** Random shareable seed (4×4 alphanumeric groups). */
+export function generateRandomSeedString(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const pick = () => chars[Math.floor(Math.random() * chars.length)];
+  const block = () => Array.from({ length: 4 }, pick).join('');
+  return `${block()}-${block()}-${block()}-${block()}`;
+}
+
 /**
- * Async wrapper around the generation loop.
- * Yields to the event loop between attempts so the loading UI stays responsive.
- * Throws if no valid layout is found within MAX_GEN_ATTEMPTS.
+ * Builds grid-only state (empty hand). One PRNG stream from `hashSeed(seedStr)`
+ * so retries and assembly are fully deterministic for a given seed.
  */
-export async function generateGameAsync(
-  wordBank:    string[],
-  onProgress:  ProgressCallback,
-  difficulty:  number,
+export async function generateGridOnlyAsync(
+  wordBank: string[],
+  onProgress: ProgressCallback,
   gridSizeKey: GridSizeKey,
+  seedStr: string
 ): Promise<GameState> {
   const {
-    size, targetWords, handSize, bonusSize,
-    wildCount, minWordLen, maxWordLen,
-    doubleCount, tripleCount,
+    size,
+    targetWords,
+    minWordLen,
+    maxWordLen,
+    wildCount,
+    doubleCount,
+    tripleCount,
   } = GRID_CONFIGS[gridSizeKey];
 
   const validWords = wordBank.filter(w => w.length >= minWordLen && w.length <= maxWordLen);
   let result: { grid: Cell[][]; words: Word[] } | null = null;
 
+  const rng = mulberry32(hashSeed(seedStr) ^ 0x9e3779b9);
+
   for (let attempt = 0; attempt < MAX_GEN_ATTEMPTS; attempt++) {
     onProgress(attempt + 1, MAX_GEN_ATTEMPTS, false);
-    await new Promise<void>(r => setTimeout(r, 0)); // yield to UI
-    result = tryGenerateGrid(riggedCandidates(validWords, difficulty), size, targetWords);
+    await new Promise<void>(r => setTimeout(r, 0));
+
+    const candidates = shuffleWordBankForGrid(validWords, rng);
+    result = tryGenerateGrid(candidates, size, targetWords, rng);
     if (result) break;
   }
 
   if (!result) throw new Error('Could not generate grid after max attempts');
 
   onProgress(MAX_GEN_ATTEMPTS, MAX_GEN_ATTEMPTS, true);
-  return assembleGame(result, difficulty, handSize, bonusSize, wildCount, doubleCount, tripleCount);
+  return assembleGridOnly(result, wildCount, doubleCount, tripleCount, rng);
+}
+
+/**
+ * @deprecated Prefer `generateGridOnlyAsync` + draft + `assembleHandIntoState`.
+ * Kept for callers that want a one-shot game without drafting.
+ */
+export async function generateGameAsync(
+  wordBank: string[],
+  onProgress: ProgressCallback,
+  difficulty: number,
+  gridSizeKey: GridSizeKey,
+  seedStr: string = generateRandomSeedString()
+): Promise<GameState> {
+  const { handSize, bonusSize } = GRID_CONFIGS[gridSizeKey];
+  const difficultyKey = diffKeyFromValue(difficulty);
+  const grid = await generateGridOnlyAsync(wordBank, onProgress, gridSizeKey, seedStr);
+  return assembleHandIntoState(
+    grid,
+    difficulty,
+    handSize,
+    bonusSize,
+    difficultyKey,
+    [],
+    seedStr
+  );
 }

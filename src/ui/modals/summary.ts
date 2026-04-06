@@ -1,7 +1,7 @@
 import { createOverlay, openModal, closeModalById, onEscape } from './base';
 import { GRID_CONFIGS } from '../../constants';
 import type { GameState, GameConfig } from '../../types';
-import { computeScore, computeWordScore } from '../../core/gameLogic';
+import { computeScore, computeWordScore, getGridLetters } from '../../core/gameLogic';
 import { diffLabel, sizeLabel, scoreToStars, formatDuration } from '../utils';
 
 const ID = 'sum-modal-overlay';
@@ -51,6 +51,29 @@ export function showSummaryModal(
     ? `<div class="sum-incomplete">${incompleteCount} word${incompleteCount !== 1 ? 's' : ''} left on the board</div>`
     : '';
 
+  // Letters revealed from hand/bonus tiles: on-grid vs off-grid (not in crossword)
+  const gridLetters = getGridLetters(state.grid);
+  const fromTiles = new Set<string>();
+  for (const t of state.hand) if (t.revealed) fromTiles.add(t.letter);
+  for (const t of state.bonus) if (t.revealed) fromTiles.add(t.letter);
+  const sorted = [...fromTiles].sort();
+  const usefulLets   = sorted.filter(l => gridLetters.has(l));
+  const notUsefulLets = sorted.filter(l => !gridLetters.has(l));
+  const lettersBlock =
+    sorted.length > 0
+      ? `<div class="sum-letters-section">
+           <div class="sum-words-label">LETTERS YOU REVEALED</div>
+           <div class="sum-letters-body">
+             ${usefulLets.length > 0
+               ? `<div class="sum-letters-row"><span class="sum-letters-tag sum-letters-useful">On card</span> ${usefulLets.join(' ')}</div>`
+               : ''}
+             ${notUsefulLets.length > 0
+               ? `<div class="sum-letters-row"><span class="sum-letters-tag sum-letters-extra">Not on card</span> ${notUsefulLets.join(' ')}</div>`
+               : ''}
+           </div>
+         </div>`
+      : '';
+
   const isSingleMode = !!cb.onStart;
   const isHubMode    = !!cb.onGoToHub;
   const actionsHTML  = isHubMode
@@ -86,6 +109,7 @@ export function showSummaryModal(
           <div class="sum-words-list">${wordRows}</div>
           ${incompleteNote}
         </div>` : `<div class="sum-no-words">No words completed this time — keep exploring the fog!</div>`}
+        ${lettersBlock}
         <div class="sum-actions">${actionsHTML}</div>
       </div>
     </div>`);

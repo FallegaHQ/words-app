@@ -5,6 +5,16 @@
 import type { GameState } from '../../types';
 import { revealAdjacentCells, revealEntireGrid } from './fog';
 
+/** End-game: lift fog on every cell so the full card is visible. */
+export function revealFullGridFog(state: GameState): GameState {
+  const fog = new Set<string>();
+  const N = state.grid.length;
+  for (let r = 0; r < N; r++)
+    for (let c = 0; c < N; c++)
+      fog.add(`${r},${c}`);
+  return { ...state, fogRevealed: fog };
+}
+
 // ── Reveal a hand or bonus tile ───────────────────────────────────────────────
 
 export function revealTile(state: GameState, idx: number, isBonus: boolean): GameState {
