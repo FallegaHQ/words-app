@@ -2,8 +2,30 @@
 // Each exported function takes the current GameState and returns a new one.
 // All state is treated as immutable — original objects are never mutated.
 
-import type { GameState } from '../../types';
+import type { GameState, Cell } from '../../types';
 import { revealAdjacentCells, revealEntireGrid } from './fog';
+
+// ── Shared fog helper ─────────────────────────────────────────────────────────
+// Lifted out of revealTile / useLuckyDrawTile — both had an identical loop.
+
+function addLetterToFog(
+  grid: Cell[][],
+  letter: string,
+  fogSet: Set<string>,
+  justAvailable: Set<string>
+): void {
+  const N = grid.length;
+  for (let r = 0; r < N; r++)
+    for (let c = 0; c < N; c++) {
+      const cell = grid[r][c];
+      if (cell.letter === letter && cell.wordIds.length > 0 && !cell.isWild) {
+        fogSet.add(`${r},${c}`);
+        if (!cell.scratched) justAvailable.add(`${r},${c}`);
+      }
+    }
+}
+
+// ── End-game fog reveal ───────────────────────────────────────────────────────
 
 /** End-game: lift fog on every cell so the full card is visible. */
 export function revealFullGridFog(state: GameState): GameState {
@@ -25,21 +47,12 @@ export function revealTile(state: GameState, idx: number, isBonus: boolean): Gam
   if (target[idx].revealed) return state; // already revealed — no-op
 
   target[idx].revealed = true;
-  const newLetter      = target[idx].letter;
+  const newLetter       = target[idx].letter;
   const revealedLetters = new Set([...state.revealedLetters, newLetter]);
 
-  const N = state.grid.length;
-  const newFog         = new Set([...state.fogRevealed]);
-  const justAvailable  = new Set<string>();
-
-  for (let r = 0; r < N; r++)
-    for (let c = 0; c < N; c++) {
-      const cell = state.grid[r][c];
-      if (cell.letter === newLetter && cell.wordIds.length > 0 && !cell.isWild) {
-        newFog.add(`${r},${c}`);                            // lift fog over matching cell
-        if (!cell.scratched) justAvailable.add(`${r},${c}`); // mark as newly available
-      }
-    }
+  const newFog        = new Set([...state.fogRevealed]);
+  const justAvailable = new Set<string>();
+  addLetterToFog(state.grid, newLetter, newFog, justAvailable);
 
   return {
     ...state, hand, bonus, revealedLetters,
@@ -89,19 +102,10 @@ export function scratchCell(state: GameState, r: number, c: number): GameState {
 export function useLuckyDrawTile(state: GameState, letter: string): GameState {
   if (state.luckyDrawUsed) return state; // guard: only once
 
-  const N = state.grid.length;
   const revealedLetters = new Set([...state.revealedLetters, letter]);
   const newFog          = new Set([...state.fogRevealed]);
   const justAvailable   = new Set<string>();
-
-  for (let r = 0; r < N; r++)
-    for (let c = 0; c < N; c++) {
-      const cell = state.grid[r][c];
-      if (cell.letter === letter && cell.wordIds.length > 0 && !cell.isWild) {
-        newFog.add(`${r},${c}`);
-        if (!cell.scratched) justAvailable.add(`${r},${c}`);
-      }
-    }
+  addLetterToFog(state.grid, letter, newFog, justAvailable);
 
   return {
     ...state,
@@ -119,9 +123,7 @@ export function useLuckyDrawTile(state: GameState, letter: string): GameState {
  * Returns true if this letter appears anywhere on the card (in any word cell).
  * Matches the summary modal's "On card" logic: a tile is green when its letter
  * exists in the crossword grid, regardless of whether the word is already
- * complete or the cell has been scratched.  The old check (incomplete-words
- * only) caused a false-red when a duplicate tile was revealed after all cells
- * for that letter had already been scratched via a previously revealed tile.
+ * complete or the cell has been scratched.
  */
 export function tileIsUseful(letter: string, state: GameState): boolean {
   return state.grid.some(row =>

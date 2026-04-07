@@ -1,5 +1,5 @@
 import { GRID_CONFIGS, LETTER_SCORES } from '../constants';
-import { tileIsUseful, computeScore } from '../core/gameLogic';
+import { tileIsUseful, computeScore, computeWordScore } from '../core/gameLogic';
 import type { GameState, GameConfig, RenderCallbacks, GameViewContext } from '../types';
 import type { Cell } from '../types';
 import { diffLabel, sizeLabel, scoreToStars } from './utils';
@@ -43,6 +43,8 @@ interface AppRefs {
   sfxBtn:            HTMLElement | null;
   /** Detect when hand panel structure must be rebuilt */
   handPanelSig:      string;
+  /** Cached last hint HTML to skip redundant innerHTML writes */
+  lastHintHTML:      string;
 }
 
 let _refs: AppRefs | null = null;
@@ -154,6 +156,31 @@ function countAvail(state: GameState): number {
   ).length;
 }
 
+// ── Precompute helpers (called once per applyStateToRefs) ─────────────────────
+
+/**
+ * Build a Set of word-bearing letter values once per render.
+ * Replaces per-tile O(N²) `tileIsUseful` calls with a single O(N²) scan +
+ * O(1) Set.has() lookups.
+ */
+function buildUsefulLetters(grid: Cell[][]): Set<string> {
+  const set = new Set<string>();
+  for (const row of grid)
+    for (const cell of row)
+      if (cell.wordIds.length > 0 && !cell.isWild) set.add(cell.letter);
+  return set;
+}
+
+/**
+ * Build a Set of completed word IDs once per render.
+ * Replaces O(words) Array.find() per scratched cell with O(1) Set.has().
+ */
+function buildCompletedIds(words: GameState['words']): Set<number> {
+  const set = new Set<number>();
+  for (const w of words) if (w.complete) set.add(w.id);
+  return set;
+}
+
 // ── Fog / cell visuals ────────────────────────────────────────────────────────
 
 function isFogged(r: number, c: number, cell: Cell, state: GameState): boolean {
@@ -163,10 +190,13 @@ function isFogged(r: number, c: number, cell: Cell, state: GameState): boolean {
   return !state.fogRevealed.has(`${r},${c}`);
 }
 
-function cellClass(r: number, c: number, cell: Cell, state: GameState): string {
+/**
+ * @param completedIds  Pre-built Set<wordId> — avoids O(words) Array.find per cell.
+ */
+function cellClass(r: number, c: number, cell: Cell, state: GameState, completedIds: Set<number>): string {
   const multCls = cell.multiplier === 3 ? ' cell-triple' : cell.multiplier === 2 ? ' cell-double' : '';
   if (cell.isWild) {
-    const done = cell.wordIds.some(id => state.words.find(w => w.id === id)?.complete);
+    const done = cell.wordIds.some(id => completedIds.has(id));
     if (cell.scratched) {
       const just = state.animatedCells.has(`${r},${c}`);
       return `cell cell-wild scratched${done ? ' word-done' : ''}${just ? ' just-scratched' : ''}`;
@@ -176,7 +206,7 @@ function cellClass(r: number, c: number, cell: Cell, state: GameState): string {
   if (cell.wordIds.length === 0) return 'cell cell-fill';
   if (isFogged(r, c, cell, state)) return `cell cell-word fog${multCls}`;
   if (cell.scratched) {
-    const done = cell.wordIds.some(id => state.words.find(w => w.id === id)?.complete);
+    const done = cell.wordIds.some(id => completedIds.has(id));
     const just = state.animatedCells.has(`${r},${c}`);
     return `cell cell-word scratched${done ? ' word-done' : ''}${just ? ' just-scratched' : ''}${multCls}`;
   }
@@ -192,12 +222,15 @@ function cellContent(r: number, c: number, cell: Cell, state: GameState): string
   return cell.isWild && !cell.scratched ? '⭐' : cell.letter;
 }
 
-function tileClass(tile: import('../types').Tile, isBonus: boolean, state: GameState): string {
+/**
+ * @param isUseful  Pre-computed — pass `tile.revealed && usefulLetters.has(tile.letter)`.
+ */
+function tileClass(tile: import('../types').Tile, isBonus: boolean, isUseful: boolean): string {
   let cls = 'tile';
   if (isBonus) cls += ' bonus-tile';
   if (tile.revealed) {
     cls += ' revealed scratched-look';
-    if (tileIsUseful(tile.letter, state)) cls += ' useful';
+    if (isUseful) cls += ' useful';
   } else {
     cls += ' hidden';
   }
@@ -244,6 +277,8 @@ function buildHeader(config: GameConfig, viewCtx: GameViewContext): string {
 
 function buildGridHTML(state: GameState): string {
   const N = state.grid.length;
+  // Precompute completedIds for cellClass calls (avoids O(words) find per cell)
+  const completedIds = buildCompletedIds(state.words);
   const cells = state.grid.flatMap((row, r) =>
     row.map((cell, c) => {
       const multAttr = cell.multiplier ? ` data-mult="${cell.multiplier}×"` : '';
@@ -251,7 +286,7 @@ function buildGridHTML(state: GameState): string {
         ? ` data-lscore="${LETTER_SCORES[cell.letter] ?? 1}"`
         : '';
       const content = isFogged(r, c, cell, state) ? '' : cellContent(r, c, cell, state);
-      return `<div class="${cellClass(r, c, cell, state)}"${multAttr}${score}>${content}</div>`;
+      return `<div class="${cellClass(r, c, cell, state, completedIds)}"${multAttr}${score}>${content}</div>`;
     })
   ).join('');
   return `<div class="grid" style="grid-template-columns:repeat(${N},1fr)">${cells}</div>`;
@@ -279,7 +314,7 @@ function shouldHideHandTilesForStatus(state: GameState, viewCtx: GameViewContext
   return state.hand.length + state.bonus.length > 0;
 }
 
-/** Draft UI: neutral tiles — every letter is selectable (player may pick “wrong” letters). */
+/** Draft UI: neutral tiles — every letter is selectable (player may pick "wrong" letters). */
 function buildDraftLetterGrid(segment: string[]): string {
   const btns = segment.map(l =>
     `<button type="button" class="draft-letter-btn" data-letter="${l}">${l}</button>`
@@ -505,6 +540,9 @@ function captureAndBindRefs(
       playSFX('draft_pick');
     });
 
+  const initialHint = hintHTML(state);
+  hint.innerHTML = initialHint;
+
   const refs: AppRefs = {
     gridSize, totalWords, cells,
     allTiles: tilesBound,
@@ -512,6 +550,7 @@ function captureAndBindRefs(
     luckyDrawRendered: false, state, cb, viewCtx,
     ticketEl, countdownOverlay, sfxBtn,
     handPanelSig: handPanelStructureSig(state, viewCtx),
+    lastHintHTML: initialHint,
   };
 
   bindLuckyDrawTiles(refs, state, cb);
@@ -609,26 +648,42 @@ function applyStateToRefs(
   _config: GameConfig,
   viewCtx: GameViewContext
 ): void {
-  const { gridSize, totalWords, cells, hint, handPanel, luckyPanel } = refs;
+  const { gridSize, totalWords, cells, handPanel, luckyPanel } = refs;
 
   refs.viewCtx = viewCtx;
   refs.ticketEl.classList.toggle('ticket-interaction-locked', viewCtx.interactionLocked);
   refs.ticketEl.classList.toggle('auto-scratching', viewCtx.interactionLocked);
   refs.ticketEl.classList.toggle('ticket-locked-hand', viewCtx.lockHandTileClicks);
 
+  // ── Precompute per-render derived data ────────────────────────────────────
+  // Each of these replaces repeated O(N) or O(N²) work inside the loops below.
+
+  /** Set of completed word IDs — O(1) lookup replaces Array.find() per cell */
+  const completedIds = buildCompletedIds(state.words);
+
+  /** Completed words array — reused for both count and score */
+  const completedWords = state.words.filter(w => w.complete);
+  const done  = completedWords.length;  // replaces a second .filter pass
+  const score = completedWords.reduce((sum, w) => sum + computeWordScore(w, state.grid), 0);
+
+  /** Letter set from word cells — O(1) lookup replaces O(N²) tileIsUseful per tile */
+  const usefulLetters = buildUsefulLetters(state.grid);
+
+  // ── Grid cells ────────────────────────────────────────────────────────────
+  // data-mult and data-lscore are immutable after grid generation — no need
+  // to re-check them on every render; they were set correctly in buildGridHTML.
+
   for (let r = 0; r < gridSize; r++)
     for (let c = 0; c < gridSize; c++) {
       const el   = cells[r][c];
       const cell = state.grid[r][c];
-      const cls  = cellClass(r, c, cell, state);
+      const cls  = cellClass(r, c, cell, state, completedIds);
       if (el.className !== cls) el.className = cls;
       const content = cellContent(r, c, cell, state);
       if (el.textContent !== content) el.textContent = content;
-      const multStr = cell.multiplier ? `${cell.multiplier}×` : '';
-      if (el.dataset.mult !== multStr) el.dataset.mult = multStr;
-      const lscore = (!cell.isWild && cell.wordIds.length > 0) ? String(LETTER_SCORES[cell.letter] ?? 1) : '';
-      if (el.dataset.lscore !== lscore) el.dataset.lscore = lscore;
     }
+
+  // ── Hand tiles ────────────────────────────────────────────────────────────
 
   const sig = handPanelStructureSig(state, viewCtx);
   if (sig !== refs.handPanelSig) {
@@ -639,23 +694,32 @@ function applyStateToRefs(
       const idx     = isBonus ? i - state.hand.length : i;
       const tile    = isBonus ? state.bonus[idx] : state.hand[idx];
       if (!tile) return;
-      setClass(el, tileClass(tile, isBonus, state));
+      // Use pre-built usefulLetters Set — avoids O(N²) grid scan per tile
+      setClass(el, tileClass(tile, isBonus, tile.revealed && usefulLetters.has(tile.letter)));
       setText(el, tile.revealed ? tile.letter : (isBonus ? '🎁' : ''));
     });
   }
 
   syncHandStatusSlot(refs, state, viewCtx);
 
-  hint.innerHTML = hintHTML(state);
+  // ── Hint — skip DOM write when string is unchanged ────────────────────────
 
-  const done  = state.words.filter(w => w.complete).length;
-  const score = computeScore(state);
+  const newHintHTML = hintHTML(state);
+  if (newHintHTML !== refs.lastHintHTML) {
+    refs.hint.innerHTML = newHintHTML;
+    refs.lastHintHTML   = newHintHTML;
+  }
+
+  // ── Score bar ─────────────────────────────────────────────────────────────
+
   const mainEl = document.getElementById('score-main');
   if (mainEl) mainEl.innerHTML = scoreBarMainHTML(done, totalWords, score);
 
   ensureWordsButton(refs, state, totalWords, viewCtx);
   const countBadge = document.getElementById('words-count-badge');
   if (countBadge) countBadge.textContent = `${done}/${totalWords}`;
+
+  // ── Lucky draw ────────────────────────────────────────────────────────────
 
   const allRevealed = state.hand.every(t => t.revealed) && state.bonus.every(t => t.revealed);
   const showLucky   = allRevealed && !state.luckyDrawUsed && state.luckyDrawPool.length > 0;
@@ -669,6 +733,8 @@ function applyStateToRefs(
     handPanel .classList.remove('hidden-panel');
     luckyPanel.classList.add   ('hidden-panel');
   }
+
+  // ── Countdown overlay ─────────────────────────────────────────────────────
 
   if (viewCtx.showCountdown != null) {
     if (!refs.countdownOverlay) {

@@ -347,25 +347,34 @@ async function runEndGameCountdownAndSummary(): Promise<void> {
   showAutoSummary();
 }
 
-function goToHub(): void {
-  resetSession();
-  resetRenderer();
+// ── Hub helpers ───────────────────────────────────────────────────────────────
+
+/**
+ * Simple new-ticket flow: show modal → hide → apply config → start game.
+ * Used from the hub and after auto-summary. For mid-game "New Ticket" (which
+ * may show a summary first), see the inline handler in `callbacks.onNewGame`.
+ */
+function openNewTicketFlow(opts?: { dailyChallenge?: boolean }): void {
+  showNewTicketModal(
+    currentConfig,
+    newConfig => {
+      hideNewTicketModal();
+      currentConfig = newConfig;
+      startNewGame();
+    },
+    opts?.dailyChallenge ? { dailyChallenge: true } : undefined
+  );
+}
+
+/**
+ * Render the hub with all its callbacks.
+ * Extracted so both `goToHub()` and the bootstrap call share one definition.
+ */
+function mountHub(): void {
   renderHub({
-    onNewGame: () => {
-      showNewTicketModal(currentConfig, newConfig => {
-        hideNewTicketModal();
-        currentConfig = newConfig;
-        startNewGame();
-      });
-    },
-    onDailyChallenge: () => {
-      showNewTicketModal(currentConfig, newConfig => {
-        hideNewTicketModal();
-        currentConfig = newConfig;
-        startNewGame();
-      }, { dailyChallenge: true });
-    },
-    onHowToPlay: showHowToPlayModal,
+    onNewGame:          () => openNewTicketFlow(),
+    onDailyChallenge:   () => openNewTicketFlow({ dailyChallenge: true }),
+    onHowToPlay:        showHowToPlayModal,
     onHistory: () => {
       showHistoryModal(getGameHistory(), {
         onReplay: entry => {
@@ -380,9 +389,15 @@ function goToHub(): void {
         },
       });
     },
-    onShowHighScores: () => showHighScoreModal(getAllScores(), currentConfig),
+    onShowHighScores:   () => showHighScoreModal(getAllScores(), currentConfig),
     onShowAchievements: () => showAchievementsModal(getUnlockedIds()),
   });
+}
+
+function goToHub(): void {
+  resetSession();
+  resetRenderer();
+  mountHub();
 }
 
 function showAutoSummary(): void {
@@ -565,37 +580,4 @@ async function startNewGame(): Promise<void> {
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 
 initSFX();
-
-renderHub({
-  onNewGame: () => {
-    showNewTicketModal(currentConfig, newConfig => {
-      hideNewTicketModal();
-      currentConfig = newConfig;
-      startNewGame();
-    });
-  },
-  onDailyChallenge: () => {
-    showNewTicketModal(currentConfig, newConfig => {
-      hideNewTicketModal();
-      currentConfig = newConfig;
-      startNewGame();
-    }, { dailyChallenge: true });
-  },
-  onHowToPlay: showHowToPlayModal,
-  onHistory: () => {
-    showHistoryModal(getGameHistory(), {
-      onReplay: entry => {
-        currentConfig = {
-          difficulty:    DIFFICULTY_PRESETS[entry.difficultyKey],
-          difficultyKey: entry.difficultyKey,
-          gridSizeKey:   entry.gridSizeKey,
-          seed:          entry.seed,
-          seedMode:      entry.seedMode,
-        };
-        startNewGame();
-      },
-    });
-  },
-  onShowHighScores: () => showHighScoreModal(getAllScores(), currentConfig),
-  onShowAchievements: () => showAchievementsModal(getUnlockedIds()),
-});
+mountHub();
