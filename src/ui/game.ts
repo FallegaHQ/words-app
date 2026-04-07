@@ -125,18 +125,18 @@ export function updateLoadingProgress(attempt: number, max: number, done: boolea
   }
 }
 
-export function renderError(onRetry: () => void): void {
+export function renderError(onBackToHub: () => void): void {
   resetRenderer();
   document.getElementById('app')!.innerHTML = `
   <div class="ticket screen-card">
     <div class="screen-inner">
       <div class="loading-icon">😬</div>
       <div class="error-title">Couldn't generate a ticket</div>
-      <div class="error-body">The word placement ran out of attempts.<br>Give it another shot!</div>
-      <button id="btn-retry" class="btn btn-primary error-btn">🔄 Try Again</button>
+      <div class="error-body">The word placement ran out of attempts.<br>Try a different seed or grid size.</div>
+      <button id="btn-back-hub" class="btn btn-primary error-btn">🏠 Back to Hub</button>
     </div>
   </div>`;
-  document.getElementById('btn-retry')!.addEventListener('click', onRetry);
+  document.getElementById('btn-back-hub')!.addEventListener('click', onBackToHub);
 }
 
 // ── DOM helpers ───────────────────────────────────────────────────────────────

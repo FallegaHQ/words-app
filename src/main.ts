@@ -525,7 +525,7 @@ async function startNewGame(): Promise<void> {
   }
 
   if (failed || !gridState) {
-    renderError(() => startNewGame());
+    renderError(goToHub);
     return;
   }
 
