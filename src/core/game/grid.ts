@@ -15,6 +15,25 @@ export function makeGrid(size: number): Cell[][] {
   );
 }
 
+// ── Letter position index ─────────────────────────────────────────────────────
+// Maps each letter → all grid cells that contain it, annotated with the
+// direction of the word that placed it there. Maintained incrementally so
+// tryPlaceOneWord never has to re-scan placed words.
+
+export interface LetterCell {
+  r: number;
+  c: number;
+  /** Direction of the word that put this letter here. */
+  existingHoriz: boolean;
+}
+
+/** letter → list of placed cells carrying that letter */
+export type LetterIndex = Map<string, LetterCell[]>;
+
+export function makeLetterIndex(): LetterIndex {
+  return new Map();
+}
+
 // ── Placement validation ──────────────────────────────────────────────────────
 
 /**
@@ -73,7 +92,8 @@ export function canPlace(
 
 export function placeWord(
   grid: Cell[][], words: Word[], word: string,
-  sr: number, sc: number, horiz: boolean, id: number
+  sr: number, sc: number, horiz: boolean, id: number,
+  index?: LetterIndex
 ): void {
   const cells: [number, number][] = [];
   for (let i = 0; i < word.length; i++) {
@@ -82,6 +102,13 @@ export function placeWord(
     grid[r][c].letter = word[i];
     grid[r][c].wordIds.push(id);
     cells.push([r, c]);
+
+    if (index) {
+      const entry: LetterCell = { r, c, existingHoriz: horiz };
+      const bucket = index.get(word[i]);
+      if (bucket) bucket.push(entry);
+      else index.set(word[i], [entry]);
+    }
   }
   words.push({ id, text: word, cells, horiz, complete: false });
 }
@@ -89,28 +116,50 @@ export function placeWord(
 /**
  * Finds every valid position where `word` can cross an already-placed word,
  * picks one at random, and places it. Returns true on success.
+ *
+ * When a LetterIndex is provided (strongly recommended for performance), the
+ * inner search is O(word_len × cells_per_letter) instead of the naive
+ * O(placed_words × placed_len × word_len), giving a significant speedup on
+ * dense grids.
  */
 export function tryPlaceOneWord(
   grid: Cell[][], words: Word[], word: string, id: number,
-  random: RandomFn = Math.random
+  random: RandomFn = Math.random,
+  index?: LetterIndex
 ): boolean {
   const opts: { sr: number; sc: number; horiz: boolean }[] = [];
 
-  for (const pw of words) {
-    for (let pi = 0; pi < pw.text.length; pi++) {
-      for (let wi = 0; wi < word.length; wi++) {
-        if (pw.text[pi] !== word[wi]) continue;
-        const [pr, pc] = pw.cells[pi];
-        if (pw.horiz) {
-          // Existing word is horizontal → new word must be vertical
-          const sr = pr - wi, sc = pc;
-          if (canPlace(grid, words, word, sr, sc, false))
-            opts.push({ sr, sc, horiz: false });
-        } else {
-          // Existing word is vertical → new word must be horizontal
-          const sr = pr, sc = pc - wi;
-          if (canPlace(grid, words, word, sr, sc, true))
-            opts.push({ sr, sc, horiz: true });
+  if (index) {
+    // Fast path: look up each letter of the candidate in the index rather
+    // than scanning all placed words and their cells.
+    for (let wi = 0; wi < word.length; wi++) {
+      const cells = index.get(word[wi]);
+      if (!cells) continue;
+      for (const { r, c, existingHoriz } of cells) {
+        // New word must be perpendicular to the existing one at this cell.
+        const newHoriz = !existingHoriz;
+        const sr = newHoriz ? r       : r - wi;
+        const sc = newHoriz ? c - wi  : c;
+        if (canPlace(grid, words, word, sr, sc, newHoriz))
+          opts.push({ sr, sc, horiz: newHoriz });
+      }
+    }
+  } else {
+    // Fallback: original O(placed × placed_len × word_len) scan.
+    for (const pw of words) {
+      for (let pi = 0; pi < pw.text.length; pi++) {
+        for (let wi = 0; wi < word.length; wi++) {
+          if (pw.text[pi] !== word[wi]) continue;
+          const [pr, pc] = pw.cells[pi];
+          if (pw.horiz) {
+            const sr = pr - wi, sc = pc;
+            if (canPlace(grid, words, word, sr, sc, false))
+              opts.push({ sr, sc, horiz: false });
+          } else {
+            const sr = pr, sc = pc - wi;
+            if (canPlace(grid, words, word, sr, sc, true))
+              opts.push({ sr, sc, horiz: true });
+          }
         }
       }
     }
@@ -118,7 +167,7 @@ export function tryPlaceOneWord(
 
   if (!opts.length) return false;
   const o = opts[randInt(opts.length, random)];
-  placeWord(grid, words, word, o.sr, o.sc, o.horiz, id);
+  placeWord(grid, words, word, o.sr, o.sc, o.horiz, id, index);
   return true;
 }
 

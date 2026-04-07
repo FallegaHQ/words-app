@@ -7,7 +7,7 @@ import type { GridSizeKey, DifficultyKey } from '../../constants';
 import type { Cell, Word, GameState, Tile } from '../../types';
 import { randInt, shuffle, mulberry32, hashSeed, type RandomFn } from './utils';
 import { riggedHand, shuffleWordBankForGrid } from './difficulty';
-import { makeGrid, tryPlaceOneWord, placeWord, placeMultipliers } from './grid';
+import { makeGrid, makeLetterIndex, tryPlaceOneWord, placeWord, placeMultipliers, type LetterIndex } from './grid';
 
 function diffKeyFromValue(difficulty: number): DifficultyKey {
   return difficulty <= 0.3 ? 'easy' : difficulty <= 0.65 ? 'medium' : 'hard';
@@ -43,13 +43,16 @@ function tryGenerateGrid(
 ): { grid: Cell[][]; words: Word[] } | null {
   const grid = makeGrid(size);
   const words: Word[] = [];
+  // The letter index lets tryPlaceOneWord skip the O(placed×placed_len×word_len)
+  // scan and instead do O(word_len × cells_with_that_letter) lookups.
+  const index: LetterIndex = makeLetterIndex();
 
   const first = candidates[0];
-  placeWord(grid, words, first, Math.floor(size / 2), Math.floor((size - first.length) / 2), true, 0);
+  placeWord(grid, words, first, Math.floor(size / 2), Math.floor((size - first.length) / 2), true, 0, index);
 
   let id = 1;
   for (let i = 1; i < candidates.length && words.length < targetWords; i++) {
-    if (tryPlaceOneWord(grid, words, candidates[i], id, random)) id++;
+    if (tryPlaceOneWord(grid, words, candidates[i], id, random, index)) id++;
   }
 
   return words.length >= targetWords ? { grid, words } : null;
@@ -211,6 +214,14 @@ export function generateRandomSeedString(): string {
 /**
  * Builds grid-only state (empty hand). One PRNG stream from `hashSeed(seedStr)`
  * so retries and assembly are fully deterministic for a given seed.
+ *
+ * Key optimisations vs the original:
+ *   1. Time-based yielding — only yields to the event loop when ≥16 ms have
+ *      elapsed, eliminating the ≥4 ms-per-attempt setTimeout tax that cost
+ *      ~600 ms of dead time at MAX_GEN_ATTEMPTS=150.
+ *   2. LetterIndex threading — tryGenerateGrid builds and maintains an index
+ *      of letter → placed cells, converting the O(placed×len²) inner loop in
+ *      tryPlaceOneWord to O(word_len × cells_with_letter).
  */
 export async function generateGridOnlyAsync(
   wordBank: string[],
@@ -233,9 +244,18 @@ export async function generateGridOnlyAsync(
 
   const rng = mulberry32(hashSeed(seedStr) ^ 0x9e3779b9);
 
+  // Time-based yielding: hand back to the browser only when a full frame
+  // budget (~16 ms) has elapsed, not on every attempt. This removes the
+  // ≥4 ms minimum-setTimeout cost that dominated generation time on mobile.
+  let lastYield = performance.now();
+
   for (let attempt = 0; attempt < MAX_GEN_ATTEMPTS; attempt++) {
-    onProgress(attempt + 1, MAX_GEN_ATTEMPTS, false);
-    await new Promise<void>(r => setTimeout(r, 0));
+    const now = performance.now();
+    if (now - lastYield >= 16) {
+      onProgress(attempt + 1, MAX_GEN_ATTEMPTS, false);
+      await new Promise<void>(r => setTimeout(r, 0));
+      lastYield = performance.now();
+    }
 
     const candidates = shuffleWordBankForGrid(validWords, rng);
     result = tryGenerateGrid(candidates, size, targetWords, rng);

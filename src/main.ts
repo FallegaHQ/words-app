@@ -164,7 +164,7 @@ function buildViewCtx(): GameViewContext {
   if (gamePhase === 'wild_autoscratch') {
     v.showWordsButton       = false;
     v.handPanelMessageOnly  = 'Opening wild ⭐ cells…';
-    v.handStatusMessage     = 'Auto-scratch in progress — the grid is locked until this finishes.';
+    v.handStatusMessage     = 'Auto-scratch in progress...';
     v.lockHandTileClicks    = true;
     v.interactionLocked     = true;
     return v;
