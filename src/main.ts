@@ -218,6 +218,22 @@ function buildViewCtx(): GameViewContext {
   return v;
 }
 
+
+// ── End game overlay ──────────────────────────────────────────────────────────────
+
+function setClickOverlay(enabled: boolean): void {
+  const ID = 'click-blocker-overlay';
+  if (enabled) {
+    if (document.getElementById(ID)) return;
+    const el = document.createElement('div');
+    el.id = ID;
+    el.style.cssText = 'position:fixed;inset:0;z-index:9999;cursor:not-allowed;';
+    document.body.appendChild(el);
+  } else {
+    document.getElementById(ID)?.remove();
+  }
+}
+
 // ── State update ──────────────────────────────────────────────────────────────
 
 function update(next: GameState, opts?: { skipAchievements?: boolean }): void {
@@ -312,6 +328,7 @@ async function runEndGameCountdownAndSummary(): Promise<void> {
   render(state, callbacks, currentConfig, buildViewCtx());
 
   // Step 2: Hold the revealed board for 5 seconds before the countdown
+  setClickOverlay(true);
   await new Promise<void>(r => setTimeout(r, 5000));
 
   // Step 3: Countdown
@@ -320,6 +337,7 @@ async function runEndGameCountdownAndSummary(): Promise<void> {
     if (state) render(state, callbacks, currentConfig, buildViewCtx());
     await new Promise<void>(r => setTimeout(r, 1000));
   }
+  setClickOverlay(false);
 
   endGameCountdown = null;
   gamePhase = 'play';

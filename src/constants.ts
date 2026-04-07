@@ -1,4 +1,4 @@
-export const APP_VERSION = '1.10';
+export const APP_VERSION = '1.16';
 export const MAX_GEN_ATTEMPTS = 150;
 export const ALPHABET         = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
