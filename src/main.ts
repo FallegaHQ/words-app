@@ -362,6 +362,8 @@ function goToHub(): void {
         },
       });
     },
+    onShowHighScores: () => showHighScoreModal(getAllScores(), currentConfig),
+    onShowAchievements: () => showAchievementsModal(getUnlockedIds()),
   });
 }
 
@@ -576,4 +578,6 @@ renderHub({
       },
     });
   },
+  onShowHighScores: () => showHighScoreModal(getAllScores(), currentConfig),
+  onShowAchievements: () => showAchievementsModal(getUnlockedIds()),
 });

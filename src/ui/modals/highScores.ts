@@ -2,7 +2,7 @@ import { createOverlay, closeModalById, onEscape } from './base';
 import { GRID_CONFIGS } from '../../constants';
 import type { DifficultyKey, GridSizeKey } from '../../constants';
 import type { GameConfig, HighScore } from '../../types';
-import { scoreToStars, formatDuration } from '../utils';
+import { formatDuration } from '../utils';
 
 const ID = 'hs-modal-overlay';
 type ScoresMap = Partial<Record<DifficultyKey, Partial<Record<GridSizeKey, HighScore[]>>>>;
@@ -16,25 +16,32 @@ export function showHighScoreModal(scores: ScoresMap, currentConfig: GameConfig)
   const diffLabels: Record<DifficultyKey, string> = { easy: '🌴 Easy', medium: '⚡ Med', hard: '🔥 Hard' };
   const sizeLabels: Record<GridSizeKey,   string> = { small: 'Small', normal: 'Normal', large: 'Large' };
 
+  function starsGrid(words: number, total: number): string {
+    const ratio = words / total;
+    const n = ratio === 0 ? 0 : ratio < 0.2 ? 1 : ratio < 0.4 ? 2 : ratio < 0.6 ? 3 : ratio < 0.85 ? 4 : 5;
+    const all = '★'.repeat(n) + '☆'.repeat(5 - n);
+    return `<span class="hs-stars-row">${all.slice(0, 3)}</span><span class="hs-stars-row">${all.slice(3)}</span>`;
+  }
+
   function buildRows(d: DifficultyKey, s: GridSizeKey): string {
     const list = scores[d]?.[s] ?? [];
-    const top  = [...list].sort((a, b) => b.words - a.words).slice(0, 10);
+    const top  = [...list].sort((a, b) => b.score - a.score || b.words - a.words).slice(0, 10);
     if (!top.length) return `<tr><td colspan="6" class="hs-empty">No scores yet</td></tr>`;
     return top.map((sc, i) => {
       const d2   = new Date(sc.date);
       const date = d2.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
       const time = d2.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
       const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`;
-      const stars = scoreToStars(sc.words, sc.total);
       const dur   = sc.elapsedMs ? formatDuration(sc.elapsedMs) : '—';
+      const pts   = sc.score > 0 ? sc.score.toLocaleString() : '—';
       const seedCell = sc.seed
-        ? `<span class="hs-seed-text" title="${sc.seed}">${sc.seed.length > 14 ? sc.seed.slice(0, 12) + '…' : sc.seed}</span>
-           <button class="hs-seed-copy" data-seed="${sc.seed}" title="Copy seed">📋</button>`
-        : `<span class="hs-seed-text hs-seed-na">—</span>`;
+        ? `<button class="hs-seed-copy" data-seed="${sc.seed}" title="Copy seed: ${sc.seed}">📋</button>`
+        : `<span class="hs-seed-na">—</span>`;
       return `<tr class="${i === 0 ? 'hs-top' : ''}">
         <td class="hs-rank">${medal}</td>
         <td class="hs-score">${sc.words}<span class="hs-total"> / ${sc.total}</span></td>
-        <td class="hs-stars">${stars}</td>
+        <td class="hs-pts">${pts}</td>
+        <td class="hs-stars">${starsGrid(sc.words, sc.total)}</td>
         <td class="hs-dur">${dur}</td>
         <td class="hs-seed">${seedCell}</td>
         <td class="hs-date">${date}<br><span class="hs-time">${time}</span></td>
@@ -63,10 +70,12 @@ export function showHighScoreModal(scores: ScoresMap, currentConfig: GameConfig)
             </div>
           </div>
           <div class="hs-context">${diffLabels[selDiff]} · ${cfg.size}×${cfg.size} · ${cfg.targetWords} words</div>
+          <div class="hs-table-wrap">
           <table class="hs-table">
-            <thead><tr><th>#</th><th>Score</th><th>Stars</th><th>Time</th><th>Seed</th><th>Date</th></tr></thead>
+            <thead><tr><th>#</th><th>Words</th><th>Pts</th><th>Stars</th><th>Time</th><th>Seed</th><th>Date</th></tr></thead>
             <tbody>${buildRows(selDiff, selSize)}</tbody>
           </table>
+          </div>
         </div>
       </div>`;
 

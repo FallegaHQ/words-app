@@ -116,14 +116,15 @@ export function useLuckyDrawTile(state: GameState, letter: string): GameState {
 // ── Tile utility query ────────────────────────────────────────────────────────
 
 /**
- * Returns true if revealing this letter would help complete at least one
- * unfinished word (used to highlight useful tiles in the hand panel).
+ * Returns true if this letter appears anywhere on the card (in any word cell).
+ * Matches the summary modal's "On card" logic: a tile is green when its letter
+ * exists in the crossword grid, regardless of whether the word is already
+ * complete or the cell has been scratched.  The old check (incomplete-words
+ * only) caused a false-red when a duplicate tile was revealed after all cells
+ * for that letter had already been scratched via a previously revealed tile.
  */
 export function tileIsUseful(letter: string, state: GameState): boolean {
-  return state.words.some(w =>
-    !w.complete &&
-    w.cells.some(([r, c]) =>
-      state.grid[r][c].letter === letter && !state.grid[r][c].isWild
-    )
+  return state.grid.some(row =>
+    row.some(cell => cell.letter === letter && cell.wordIds.length > 0 && !cell.isWild)
   );
 }

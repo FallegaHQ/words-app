@@ -15,7 +15,7 @@ const STEPS: Record<Lang, Step[]> = {
     { icon: '🎁', title: 'Bonus Tiles',            body: 'Gift tiles in your hand can be revealed at any moment for extra letters.' },
     { icon: '🌫️', title: 'Fog of War',            body: 'Some grid cells are hidden in fog. Scratch nearby cells to reveal what\'s lurking underneath.' },
     { icon: '🍀', title: 'Lucky Draw',             body: 'After all your hand tiles are revealed, a Lucky Draw appears. Pick one bonus letter to use on the grid.' },
-    { icon: '×2 ×3', title: 'Multiplier Cells',   body: '2× and 3× cells multiply the score of any word they belong to. Hunt for them!' },
+    { icon: '×3', title: 'Multiplier Cells',   body: '2× and 3× cells multiply the score of any word they belong to. Hunt for them!' },
     { icon: '🏆', title: 'Score & Achievements',  body: 'Earn stars based on how many words you find. Beat your high score and unlock achievements across games.' },
   ],
   ar: [
